@@ -82,17 +82,40 @@ jobs:
           mkdir dmg-src
           cp -R "$APP" dmg-src/
           ln -s /Applications dmg-src/Applications
-          # Qisqa o'rnatish yo'riqnomasi
+          # Bosiladigan o'rnatuvchi — ilovani Applications'ga ko'chiradi,
+          # Gatekeeper belgisini olib tashlaydi va ochadi. Foydalanuvchi
+          # faqat 2 marta bosadi (ochish + terminal ruxsati).
+          cat > "dmg-src/AIBA POS ni ornatish.command" <<'CMD'
+          #!/bin/bash
+          set -e
+          SRC="$(cd "$(dirname "$0")" && pwd)/AIBA POS.app"
+          DST="/Applications/AIBA POS.app"
+          echo "AIBA POS o'rnatilmoqda..."
+          rm -rf "$DST" 2>/dev/null || true
+          cp -R "$SRC" "$DST"
+          xattr -cr "$DST" 2>/dev/null || true
+          codesign --force --deep --sign - "$DST" 2>/dev/null || true
+          open "$DST"
+          echo "Tayyor! AIBA POS ochildi. Bu oynani yopsangiz bo'ladi."
+          CMD
+          chmod +x "dmg-src/AIBA POS ni ornatish.command"
+          # Zaxira yo'riqnoma (skript ishlamasa qo'lda)
           cat > "dmg-src/OQING - o'rnatish.txt" <<'TXT'
           AIBA POS — o'rnatish (macOS)
 
-          1) "AIBA POS" ilovasini yonidagi Applications papkasiga sudrab tashlang.
-          2) Applications ichida "AIBA POS" ustiga O'NG tugma bosib -> "Open".
-          3) Chiqadigan oynada yana "Open" bosing. Bir marta shunday qilinsa,
-             keyingi safar oddiy ochiladi.
+          ODDIY YO'L:
+            "AIBA POS ni ornatish.command" ustiga IKKI marta bosing.
+            (Birinchi marta "Open" tasdig'ini so'rasa — Open bosing.)
+            Ilova o'zi Applications'ga o'rnatiladi va ochiladi.
 
-          (Ilova Apple sertifikati bilan imzolanmagani uchun macOS birinchi marta
-           ogohlantiradi — bu normal, yuqoridagi qadam bilan hal bo'ladi.)
+          AGAR ".command" ochilmasa:
+            Uning ustiga O'NG tugma -> Open -> Open.
+
+          QO'LDA (agar yuqoridagilar ishlamasa):
+            1) "AIBA POS" ni Applications papkasiga sudrang.
+            2) Terminal oching, quyidagini yozing (nusxa oling):
+               xattr -cr "/Applications/AIBA POS.app"
+            3) Applications'da "AIBA POS" ni oching.
           TXT
           hdiutil create -volname "AIBA POS" -srcfolder dmg-src -ov -format UDZO AIBA-POS-macOS.dmg
 
