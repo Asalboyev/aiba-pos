@@ -6,6 +6,7 @@
 
 stages:
   - build
+  - deploy
 
 variables:
   FLUTTER_VERSION: "3.35.5"
@@ -27,3 +28,26 @@ build-android:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual   # Har push'da avto ishlamasin — kerak bo'lganda "Play" bosasiz
       allow_failure: true
+
+# Деплой POS-бэкенда на uic-cloud (10.0.0.35).
+# Runner: shell-executor на самом сервере (tag: pos-deploy), job выполняется
+# от пользователя hamrayev. Секреты живут в /home/hamrayev/deploy/milli-grill-pos.env
+# и в репозиторий не попадают.
+deploy-pos:
+  stage: deploy
+  tags:
+    - pos-deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  resource_group: pos-deploy
+  script:
+    - rsync -a --delete --exclude '.env' pos/ /home/hamrayev/apps/milli-grill-pos/pos/
+    - cp /home/hamrayev/deploy/milli-grill-pos.env /home/hamrayev/apps/milli-grill-pos/pos/.env
+    - cd /home/hamrayev/apps/milli-grill-pos/pos
+    - docker compose up -d --build
+    - docker compose ps
+    - curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://127.0.0.1:8006/health
+    - docker image prune -f
+  environment:
+    name: production
+    url: http://pos.milligrill.aiba.uz
