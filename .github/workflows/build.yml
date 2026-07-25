@@ -1,0 +1,86 @@
+# GitHub Actions — AIBA POS Windows + macOS uchun tayyor installer yasaydi.
+# Har push (yoki qo'lda "Run workflow") — ZIP/DMG artefaktlar bilan bo'ladi.
+
+name: Build POS Terminal
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # Qo'lda ishga tushirish uchun
+
+jobs:
+  # ============================================================
+  # Windows uchun EXE + ZIP paket
+  # ============================================================
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.5'
+          channel: 'stable'
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+        working-directory: pos-terminal
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: pos-terminal
+
+      - name: Build Windows release
+        run: flutter build windows --release
+        working-directory: pos-terminal
+
+      - name: Zip release
+        run: |
+          cd pos-terminal/build/windows/x64/runner/Release
+          Compress-Archive -Path * -DestinationPath $env:GITHUB_WORKSPACE/AIBA-POS-Windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIBA-POS-Windows
+          path: AIBA-POS-Windows.zip
+          retention-days: 30
+
+  # ============================================================
+  # macOS uchun DMG (siz'da allaqachon .app bor, lekin CI'da ham qulay)
+  # ============================================================
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.5'
+          channel: 'stable'
+
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+        working-directory: pos-terminal
+
+      - name: Get dependencies
+        run: flutter pub get
+        working-directory: pos-terminal
+
+      - name: Build macOS release
+        run: flutter build macos --release
+        working-directory: pos-terminal
+
+      - name: Build DMG
+        run: |
+          mkdir dmg-src
+          cp -R pos-terminal/build/macos/Build/Products/Release/aiba_pos_terminal.app dmg-src/
+          ln -s /Applications dmg-src/Applications
+          hdiutil create -volname "AIBA POS" -srcfolder dmg-src -ov -format UDZO AIBA-POS-macOS.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIBA-POS-macOS
+          path: AIBA-POS-macOS.dmg
+          retention-days: 30
