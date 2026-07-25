@@ -8,7 +8,7 @@ class ReportsRemoteDataSource {
 
   Future<SalesSummary> salesSummary() async {
     final res = await _client
-        .get<Map<String, dynamic>>('/api/v2/reports/sales-summary');
+        .get<Map<String, dynamic>>('/api/v2/pos-terminal/reports/sales-summary');
     final j = res.data ?? const {};
     final tops = (j['top_products'] as List? ?? const [])
         .map((e) => (e as Map).cast<String, dynamic>())

@@ -20,7 +20,9 @@ class AppConfig {
   static const _kOrderSeq = 'order_seq';
   static const _kToken = 'access_token';
 
-  static const defaultBaseUrl = 'http://localhost:8005';
+  // AIBA Nex backend — the terminal API lives under /api/v2/pos-terminal/*
+  // (paths appended by the datasources). Dev: http://<mac-ip>:18001
+  static const defaultBaseUrl = 'https://next.aiba.uz';
   static const defaultPrinterPort = 9100;
 
   String get baseUrl => _prefs.getString(_kBaseUrl) ?? defaultBaseUrl;

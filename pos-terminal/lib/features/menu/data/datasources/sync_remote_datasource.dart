@@ -8,7 +8,7 @@ class SyncRemoteDataSource {
   final DioClient _client;
 
   Future<SyncPullResult> pull() async {
-    final res = await _client.get<Map<String, dynamic>>('/api/v2/sync/pull');
+    final res = await _client.get<Map<String, dynamic>>('/api/v2/pos-terminal/sync/pull');
     return SyncPullResult.fromJson(res.data ?? const {});
   }
 
@@ -17,7 +17,7 @@ class SyncRemoteDataSource {
     List<Map<String, dynamic>> orders,
   ) async {
     final res = await _client.post<Map<String, dynamic>>(
-      '/api/v2/sync/push',
+      '/api/v2/pos-terminal/sync/push',
       data: {'orders': orders},
     );
     final results = (res.data?['results'] as List? ?? const [])

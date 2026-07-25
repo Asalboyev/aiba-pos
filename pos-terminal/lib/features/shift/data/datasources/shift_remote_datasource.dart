@@ -27,14 +27,14 @@ class ShiftRemoteDataSource {
 
   Future<Shift?> current() async {
     final res =
-        await _client.get<Map<String, dynamic>>('/api/v2/shifts/current');
+        await _client.get<Map<String, dynamic>>('/api/v2/pos-terminal/shifts/current');
     final shift = (res.data?['shift'] as Map?)?.cast<String, dynamic>();
     return _parse(shift);
   }
 
   Future<Shift> open(num openingCash) async {
     final res = await _client.post<Map<String, dynamic>>(
-      '/api/v2/shifts/open',
+      '/api/v2/pos-terminal/shifts/open',
       data: {'opening_cash': openingCash},
     );
     final shift = (res.data?['shift'] as Map?)?.cast<String, dynamic>();
@@ -45,7 +45,7 @@ class ShiftRemoteDataSource {
 
   Future<Shift> close({String? shiftId}) async {
     final res = await _client.post<Map<String, dynamic>>(
-      '/api/v2/shifts/close',
+      '/api/v2/pos-terminal/shifts/close',
       data: <String, dynamic>{'shift_id': ?shiftId},
     );
     final z = (res.data?['z_report'] as Map?)?.cast<String, dynamic>() ??

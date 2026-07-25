@@ -13,22 +13,15 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  late final TextEditingController _terminalCode;
+  // Terminal kodi endi Sozlamalarda (⚙️) turadi — kassir faqat o'z kodi va
+  // PIN'ini kiritadi, chalg'imaydi.
   final _staffCode = TextEditingController();
   String _pin = '';
   bool _openShift = true;
   final _openingCash = TextEditingController(text: '0');
 
   @override
-  void initState() {
-    super.initState();
-    final config = ref.read(appConfigProvider);
-    _terminalCode = TextEditingController(text: config.terminalCode);
-  }
-
-  @override
   void dispose() {
-    _terminalCode.dispose();
     _staffCode.dispose();
     _openingCash.dispose();
     super.dispose();
@@ -45,16 +38,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    final terminalCode = _terminalCode.text.trim();
+    final terminalCode = ref.read(appConfigProvider).terminalCode.trim();
     final staffCode = _staffCode.text.trim();
-    if (terminalCode.isEmpty || staffCode.isEmpty || _pin.isEmpty) {
+    if (terminalCode.isEmpty) {
+      // Bir martalik o'rnatish: administrator Sozlamalarda terminal kodini kiritadi.
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Terminal, xodim kodi va PIN to\'ldiring')),
+        SnackBar(
+          content: const Text('Terminal kodi kiritilmagan — Sozlamalar (⚙️) bo\'limida kiriting'),
+          action: SnackBarAction(
+            label: 'Sozlamalar',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ),
       );
       return;
     }
-    // Persist the terminal code for next time.
-    await ref.read(appConfigProvider).setTerminalCode(terminalCode);
+    if (staffCode.isEmpty || _pin.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Xodim kodi va PIN to\'ldiring')),
+      );
+      return;
+    }
 
     final ok = await ref.read(loginControllerProvider.notifier).login(
           terminalCode: terminalCode,
@@ -92,17 +98,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: _terminalCode,
-                  decoration: const InputDecoration(
-                    labelText: 'Terminal kodi',
-                    hintText: 'T1',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.point_of_sale),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
                   controller: _staffCode,
+                  autofocus: true,
                   decoration: const InputDecoration(
                     labelText: 'Xodim kodi',
                     hintText: '101',

@@ -14,7 +14,7 @@ class AuthRemoteDataSource {
     required num openingCash,
   }) async {
     final res = await _client.post<Map<String, dynamic>>(
-      '/api/v2/auth/login',
+      '/api/v2/pos-terminal/auth/login',
       noAuth: true,
       data: {
         'terminal_code': terminalCode,
@@ -30,7 +30,7 @@ class AuthRemoteDataSource {
   /// Adminka chek sozlamalarini o'zgartirgan bo'lishi mumkin — chek chop
   /// etishdan oldin fresh restoran ma'lumotini olamiz.
   Future<Map<String, dynamic>> fetchRestaurant() async {
-    final res = await _client.get<Map<String, dynamic>>('/api/v2/restaurant/me');
+    final res = await _client.get<Map<String, dynamic>>('/api/v2/pos-terminal/restaurant/me');
     return res.data ?? const {};
   }
 }

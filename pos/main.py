@@ -88,11 +88,6 @@ _static_dir = Path(__file__).parent / "app" / "static"
 app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
-@app.get("/admin", include_in_schema=False)
-async def admin_page():
-    """Single-file web admin (login = AIBA_SERVICE_SECRET)."""
-    from pathlib import Path
-
-    from fastapi.responses import FileResponse
-
-    return FileResponse(Path(__file__).parent / "app" / "static" / "admin.html")
+# The single-file web admin (/admin, app/static/admin.html) is RETIRED —
+# management now lives in the AIBA Nex "POS Kassa" module (native React over
+# the Rust /api/v2/pos/* backend). This service keeps only the terminal API.

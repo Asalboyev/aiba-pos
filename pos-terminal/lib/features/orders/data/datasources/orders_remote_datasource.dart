@@ -9,7 +9,7 @@ class OrdersRemoteDataSource {
     Map<String, dynamic> orderIn,
   ) async {
     final res =
-        await _client.post<Map<String, dynamic>>('/api/v2/orders', data: orderIn);
+        await _client.post<Map<String, dynamic>>('/api/v2/pos-terminal/orders', data: orderIn);
     return res.data ?? const {};
   }
 
@@ -17,7 +17,7 @@ class OrdersRemoteDataSource {
   /// receipt has transitioned from `pending` to `sent`.
   Future<Map<String, dynamic>> fetchOrder(String orderId) async {
     final res =
-        await _client.get<Map<String, dynamic>>('/api/v2/orders/$orderId');
+        await _client.get<Map<String, dynamic>>('/api/v2/pos-terminal/orders/$orderId');
     return res.data ?? const {};
   }
 }

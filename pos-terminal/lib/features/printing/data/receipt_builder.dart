@@ -5,29 +5,123 @@ import '../../../core/utils/money.dart';
 import '../domain/receipt_data.dart';
 
 /// Builds the ESC/POS byte stream for a [ReceiptData], including the fiscal QR.
+///
+/// O'lcham nazorati qat'iy: HAR BIR qator to'liq (o'lcham + qalinlik + font +
+/// hizalanish) stil bilan bosiladi — hech bir qator oldingi qatorning "katta"
+/// stilini meros qilib olmaydi (arzon printerlarda style-bleed muammosi).
+/// Ustunlar PosColumn'ga emas, qog'oz kengligidan hisoblangan aniq belgilar
+/// soniga (58mm = 32, 80mm = 48) probel bilan tekislanadi — yaxlitlash
+/// xatosiz, o'ng ustun har doim o'ng chetga tegib turadi.
 class ReceiptBuilder {
+  // Font A da bir qatorga sig'adigan belgilar: 58mm → 32, 80mm → 48.
+  static int _cols(int paperWidth) => paperWidth == 58 ? 32 : 48;
+
+  // ── to'liq stillar (har chaqiriqda hammasi aniq ko'rsatiladi) ──────────────
+  static const _normal = PosStyles(
+    align: PosAlign.left,
+    bold: false,
+    height: PosTextSize.size1,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  static const _center = PosStyles(
+    align: PosAlign.center,
+    bold: false,
+    height: PosTextSize.size1,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  static const _centerBold = PosStyles(
+    align: PosAlign.center,
+    bold: true,
+    height: PosTextSize.size1,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  static const _title = PosStyles(
+    align: PosAlign.center,
+    bold: true,
+    height: PosTextSize.size2, // balandligi 2x, ENI 1x — uzun nom ham sig'adi
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  static const _big = PosStyles(
+    align: PosAlign.left,
+    bold: true,
+    height: PosTextSize.size2,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  static const _small = PosStyles(
+    align: PosAlign.center,
+    bold: false,
+    height: PosTextSize.size1,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontB, // mayda texnik satrlar (FP, izohlar)
+  );
+  static const _smallLeft = PosStyles(
+    align: PosAlign.left,
+    bold: false,
+    height: PosTextSize.size1,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontB, // MXIK — mahsulot qatori tagida, chapda
+  );
+
+  /// Chap + o'ng juftlikni qog'oz kengligiga probel bilan tekislaydi.
+  static String _pair(String left, String right, int cols) {
+    var l = left;
+    final space = cols - right.length;
+    if (space < 1) return '$l $right'; // juda uzun — hech qursa ajratib beramiz
+    if (l.length > space - 1) l = l.substring(0, space - 1);
+    return l + ' ' * (space - l.length) + right;
+  }
+
+  /// Uzun nomni qog'oz kengligiga so'zma-so'z o'raydi.
+  static List<String> _wrap(String text, int cols) {
+    final words = text.split(' ');
+    final lines = <String>[];
+    var cur = StringBuffer();
+    for (final w in words) {
+      if (cur.isEmpty) {
+        cur.write(w);
+      } else if (cur.length + 1 + w.length <= cols) {
+        cur.write(' $w');
+      } else {
+        lines.add(cur.toString());
+        cur = StringBuffer(w);
+      }
+    }
+    if (cur.isNotEmpty) lines.add(cur.toString());
+    // Yakka so'z qatordan uzun bo'lsa — majburan kesamiz.
+    return lines
+        .expand((l) => l.length <= cols
+            ? [l]
+            : [for (var i = 0; i < l.length; i += cols) l.substring(i, (i + cols).clamp(0, l.length))])
+        .toList();
+  }
+
   /// Build the raw command bytes. Paper width comes from adminka sozlamalari
-  /// (58 yoki 80 mm). Boshqa sozlamalar ham data.header/footer/showQr/showMxik
-  /// orqali kelib qatlanadi.
+  /// (58 yoki 80 mm) — barcha ustun/chiziqlar shu kenglikdan hisoblanadi.
   static Future<List<int>> build(ReceiptData data) async {
     final profile = await CapabilityProfile.load();
     final paperSize = data.paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
+    final cols = _cols(data.paperWidth);
     final g = Generator(paperSize, profile);
     final bytes = <int>[];
 
+    final thin = '-' * cols;
+    final thick = '=' * cols;
+
     bytes.addAll(g.reset());
 
-    // Logo — adminkada yuklangan bo'lsa, chek boshida markazda chop etamiz.
-    // Baytlarni printer-service yuklab beradi (Dio orqali /static'dan).
+    // ── Sarlavha ──────────────────────────────────────────────────────────────
     if (data.logoBytes != null && data.logoBytes!.isNotEmpty) {
       try {
         final decoded = img.decodeImage(data.logoBytes!);
         if (decoded != null) {
-          // Qog'oz kengligi bo'yicha piksel maksimumi: 58mm≈384, 80mm≈576.
           final maxW = data.paperWidth == 58 ? 300 : 480;
-          final resized = decoded.width > maxW
-              ? img.copyResize(decoded, width: maxW)
-              : decoded;
+          final resized =
+              decoded.width > maxW ? img.copyResize(decoded, width: maxW) : decoded;
           bytes.addAll(g.image(resized, align: PosAlign.center));
         }
       } catch (_) {
@@ -35,145 +129,112 @@ class ReceiptBuilder {
       }
     }
 
-    // Restoran nomi — katta va qalin (adminkadagi "Chekdagi nomi")
-    bytes.addAll(g.text(
-      data.restaurantName,
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-        height: PosTextSize.size2,
-        width: PosTextSize.size2,
-      ),
-    ));
-    // Yuridik nomi (agar boshqa bo'lsa)
+    bytes.addAll(g.text(data.restaurantName, styles: _title));
     if ((data.legalName ?? '').isNotEmpty && data.legalName != data.restaurantName) {
-      bytes.addAll(g.text(data.legalName!,
-          styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(g.text(data.legalName!, styles: _center));
     }
-    // INN
     if ((data.inn ?? '').isNotEmpty) {
-      bytes.addAll(g.text('INN: ${data.inn}',
-          styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(g.text('INN: ${data.inn}', styles: _center));
     }
-    // Manzil
     if ((data.address ?? '').isNotEmpty) {
-      bytes.addAll(g.text(data.address!,
-          styles: const PosStyles(align: PosAlign.center)));
+      for (final l in _wrap(data.address!, cols)) {
+        bytes.addAll(g.text(l, styles: _center));
+      }
     }
-    // Telefon
     if ((data.phone ?? '').isNotEmpty) {
-      bytes.addAll(g.text('Tel: ${data.phone}',
-          styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(g.text('Tel: ${data.phone}', styles: _center));
     }
-    // Menejer belgilagan "Yuqori matn" (masalan "Xush kelibsiz!")
     if ((data.header ?? '').isNotEmpty) {
-      bytes.addAll(g.feed(1));
-      bytes.addAll(g.text(data.header!,
-          styles: const PosStyles(align: PosAlign.center, bold: true)));
+      bytes.addAll(g.text(data.header!, styles: _centerBold));
     }
-    if (data.terminalName != null) {
-      bytes.addAll(g.text(data.terminalName!,
-          styles: const PosStyles(align: PosAlign.center)));
-    }
+
+    bytes.addAll(g.text(thin, styles: _normal));
+
+    // Chek raqami katta — mijoz navbatini shu raqam bilan kutadi.
     if (data.orderNumber != null) {
-      // Buyurtma raqami — mijoz navbatini shu raqam bilan kutadi, shuning
-      // uchun katta va qalin bosiladi.
-      bytes.addAll(g.text('Buyurtma #${data.orderNumber}',
+      bytes.addAll(g.text('Chek #${data.orderNumber}',
           styles: const PosStyles(
             align: PosAlign.center,
             bold: true,
             height: PosTextSize.size2,
-            width: PosTextSize.size2,
+            width: PosTextSize.size1,
+            fontType: PosFontType.fontA,
           )));
     }
-    bytes.addAll(g.text(_formatDate(data.createdAt),
-        styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(g.hr());
+    bytes.addAll(g.text(
+      _pair(data.terminalName ?? '', _formatDate(data.createdAt), cols),
+      styles: _normal,
+    ));
 
-    // Items
+    bytes.addAll(g.text(thick, styles: _normal));
+
+    // ── Mahsulotlar ───────────────────────────────────────────────────────────
     for (final item in data.items) {
-      bytes.addAll(g.text(item.name, styles: const PosStyles(bold: true)));
-      bytes.addAll(g.row([
-        PosColumn(
-          text: '${item.qty} x ${Money.format(item.price)}',
-          width: 7,
-        ),
-        PosColumn(
-          text: Money.format(item.lineTotal),
-          width: 5,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]));
+      for (final l in _wrap(item.name, cols)) {
+        bytes.addAll(g.text(l,
+            styles: const PosStyles(
+              align: PosAlign.left,
+              bold: true,
+              height: PosTextSize.size1,
+              width: PosTextSize.size1,
+              fontType: PosFontType.fontA,
+            )));
+      }
+      bytes.addAll(g.text(
+        _pair('  ${_qty(item.qty)} x ${Money.format(item.price)}',
+            Money.format(item.lineTotal), cols),
+        styles: _normal,
+      ));
       if (data.showMxik && (item.mxikCode ?? '').isNotEmpty) {
-        bytes.addAll(g.text('  MXIK: ${item.mxikCode}',
-            styles: const PosStyles(fontType: PosFontType.fontB)));
+        bytes.addAll(g.text('  MXIK: ${item.mxikCode}', styles: _smallLeft));
       }
     }
 
-    bytes.addAll(g.hr());
+    bytes.addAll(g.text(thin, styles: _normal));
 
-    // Totals
-    bytes.addAll(_amountRow(g, 'Oraliq', data.subtotal));
+    // ── Jami ──────────────────────────────────────────────────────────────────
+    bytes.addAll(g.text(_pair('Oraliq', Money.format(data.subtotal), cols),
+        styles: _normal));
     if (data.discount > 0) {
-      bytes.addAll(_amountRow(g, 'Chegirma', -data.discount));
+      bytes.addAll(g.text(_pair('Chegirma', '-${Money.format(data.discount)}', cols),
+          styles: _normal));
     }
-    bytes.addAll(g.row([
-      PosColumn(
-        text: 'JAMI',
-        width: 6,
-        styles: const PosStyles(bold: true, height: PosTextSize.size2),
-      ),
-      PosColumn(
-        text: Money.formatSom(data.total),
-        width: 6,
-        styles: const PosStyles(
-            bold: true, align: PosAlign.right, height: PosTextSize.size2),
-      ),
-    ]));
+    bytes.addAll(g.text(_pair('JAMI', Money.formatSom(data.total), cols),
+        styles: _big));
 
-    bytes.addAll(g.hr());
+    bytes.addAll(g.text(thin, styles: _normal));
 
-    // Payments
+    // ── To'lovlar ─────────────────────────────────────────────────────────────
     for (final p in data.payments) {
-      bytes.addAll(_amountRow(g, p.method.label, p.amount));
+      bytes.addAll(g.text(_pair(p.method.label, Money.format(p.amount), cols),
+          styles: _normal));
     }
 
-    // MXIK note
     if (data.hasMxik) {
-      bytes.addAll(g.feed(1));
-      bytes.addAll(g.text("Tovarlar MXIK kodlari bilan fiskalizatsiya qilindi",
-          styles: const PosStyles(
-              align: PosAlign.center, fontType: PosFontType.fontB)));
+      bytes.addAll(g.text('Tovarlar MXIK kodlari bilan fiskalizatsiya qilindi',
+          styles: _small));
     }
 
-    // Soliq QR — faqat sozlamada yoqilgan bo'lsa chop etadi.
+    // ── Soliq QR ──────────────────────────────────────────────────────────────
     final qr = data.fiscal?.qrUrl;
     if (data.showQr && qr != null && qr.isNotEmpty) {
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text('Soliq QR',
-          styles: const PosStyles(align: PosAlign.center, bold: true)));
-      bytes.addAll(g.qrcode(qr, size: QRSize.Size6));
+      bytes.addAll(g.text('Soliq cheki (QR)', styles: _centerBold));
+      bytes.addAll(g.qrcode(qr,
+          size: data.paperWidth == 58 ? QRSize.Size5 : QRSize.Size6));
       if ((data.fiscal?.fiscalSign ?? '').isNotEmpty) {
-        // QR bilan FP ustma-ust tushmasin uchun bir qator bo'shliq.
         bytes.addAll(g.feed(1));
-        bytes.addAll(g.text('FP: ${data.fiscal!.fiscalSign}',
-            styles: const PosStyles(
-                align: PosAlign.center, fontType: PosFontType.fontB)));
+        bytes.addAll(g.text('FP: ${data.fiscal!.fiscalSign}', styles: _small));
       }
     } else if (data.fiscal != null && !data.fiscal!.isSuccess) {
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text('Fiskalizatsiya: ${data.fiscal!.status}',
-          styles: const PosStyles(align: PosAlign.center)));
+      bytes.addAll(
+          g.text('Fiskalizatsiya: ${data.fiscal!.status}', styles: _center));
     }
 
-    // Pastki matn (adminkada belgilanadi). Adminka bo'sh qoldirilsa,
-    // chekda ham hech narsa chiqmaydi — default matn qo'shmaymiz.
     if ((data.footer ?? '').isNotEmpty) {
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text(
-        data.footer!,
-        styles: const PosStyles(align: PosAlign.center, bold: true),
-      ));
+      bytes.addAll(g.text(data.footer!, styles: _centerBold));
     }
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
@@ -182,42 +243,35 @@ class ReceiptBuilder {
   }
 
   /// Short hardware test ticket (used by the Settings "Test chek" button).
-  static Future<List<int>> buildTest() async {
+  ///
+  /// Ikkala kenglik uchun "o'lchagich" chiziq bosadi: qaysi chiziq qog'ozga
+  /// aniq sig'sa — adminkada o'sha kenglikni tanlash kerak (58 yoki 80).
+  static Future<List<int>> buildTest({int paperWidth = 80}) async {
     final profile = await CapabilityProfile.load();
-    final g = Generator(PaperSize.mm80, profile);
+    final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
+    final g = Generator(paperSize, profile);
     final bytes = <int>[];
     bytes.addAll(g.reset());
-    bytes.addAll(g.text('AIBA POS',
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size2,
-          width: PosTextSize.size2,
-        )));
-    bytes.addAll(g.text('Printer test',
-        styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(g.text(_formatDate(DateTime.now()),
-        styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(g.hr());
-    bytes.addAll(g.text('Agar bu chek chiqqan bo\'lsa,',
-        styles: const PosStyles(align: PosAlign.center)));
-    bytes.addAll(g.text('printer to\'g\'ri sozlangan.',
-        styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(g.text('AIBA POS', styles: _title));
+    bytes.addAll(g.text('Printer test — ${paperWidth}mm rejim', styles: _center));
+    bytes.addAll(g.text(_formatDate(DateTime.now()), styles: _center));
+    bytes.addAll(g.text('-' * _cols(paperWidth), styles: _normal));
+    // O'lchagichlar: to'g'ri kenglikda oxirgi belgi o'ng chetga tegib turadi.
+    bytes.addAll(g.text('80mm o\'lchagich (48):', styles: _normal));
+    bytes.addAll(g.text('123456789012345678901234567890123456789012345678',
+        styles: _normal));
+    bytes.addAll(g.text('58mm o\'lchagich (32):', styles: _normal));
+    bytes.addAll(g.text('12345678901234567890123456789012', styles: _normal));
+    bytes.addAll(g.text('-' * _cols(paperWidth), styles: _normal));
+    bytes.addAll(g.text('Qaysi chiziq chetga tegsa —', styles: _center));
+    bytes.addAll(g.text('adminkada o\'sha kenglikni tanlang.', styles: _center));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;
   }
 
-  static List<int> _amountRow(Generator g, String label, num amount) {
-    return g.row([
-      PosColumn(text: label, width: 7),
-      PosColumn(
-        text: Money.format(amount),
-        width: 5,
-        styles: const PosStyles(align: PosAlign.right),
-      ),
-    ]);
-  }
+  static String _qty(num q) =>
+      q == q.truncate() ? q.truncate().toString() : q.toString();
 
   static String _formatDate(DateTime d) {
     String two(int n) => n.toString().padLeft(2, '0');
