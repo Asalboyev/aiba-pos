@@ -1,6 +1,8 @@
-# GitLab CI — Flutter POS terminalini har platformaga build qiladi.
-# Windows build uchun runner Windows OS'da bo'lishi kerak (shared yoki self-hosted).
-# Artefaktlarni Pipeline sahifasidan yuklab olasiz.
+# GitLab CI — hozircha shared runnerlar Linux only (Docker).
+# Windows/macOS build lokal PowerShell/hdiutil skripti bilan qilinadi
+# (aiba-pos/build-scripts/ papkasida).
+#
+# Android APK'ni Linux runner o'zi build qilib beradi.
 
 stages:
   - build
@@ -8,61 +10,8 @@ stages:
 variables:
   FLUTTER_VERSION: "3.35.5"
 
-# ============================================================
-# Windows uchun EXE + ZIP paket
-# ============================================================
-build-windows:
-  stage: build
-  tags:
-    - windows          # <-- Windows runner tag'i (GitLab admin sozlaydi)
-  before_script:
-    # Chocolatey orqali Flutter (agar runner'da avval o'rnatilmagan bo'lsa)
-    - powershell -Command "if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) { choco install flutter -y }"
-    - flutter --version
-  script:
-    - cd pos-terminal
-    - flutter config --enable-windows-desktop
-    - flutter pub get
-    - flutter build windows --release
-    # Zip qilib artifact sifatida beramiz
-    - powershell -Command "Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath ..\AIBA-POS-Windows.zip -Force"
-  artifacts:
-    name: "aiba-pos-windows-$CI_COMMIT_SHORT_SHA"
-    paths:
-      - AIBA-POS-Windows.zip
-    expire_in: 30 days
-
-# ============================================================
-# macOS uchun DMG (agar macOS runner bo'lsa)
-# ============================================================
-build-macos:
-  stage: build
-  tags:
-    - macos            # <-- macOS runner tag'i
-  before_script:
-    - flutter --version || (echo "Flutter runner'da o'rnatilishi kerak" && exit 1)
-  script:
-    - cd pos-terminal
-    - flutter config --enable-macos-desktop
-    - flutter pub get
-    - flutter build macos --release
-    # DMG yasash
-    - mkdir -p dmg-src && cp -R build/macos/Build/Products/Release/aiba_pos_terminal.app dmg-src/
-    - ln -s /Applications dmg-src/Applications
-    - hdiutil create -volname "AIBA POS" -srcfolder dmg-src -ov -format UDZO ../AIBA-POS-macOS.dmg
-  artifacts:
-    name: "aiba-pos-macos-$CI_COMMIT_SHORT_SHA"
-    paths:
-      - AIBA-POS-macOS.dmg
-    expire_in: 30 days
-
-# ============================================================
-# Android APK (Linux runner'da ishlaydi)
-# ============================================================
 build-android:
   stage: build
-  tags:
-    - linux
   image: ghcr.io/cirruslabs/flutter:$FLUTTER_VERSION
   script:
     - cd pos-terminal
@@ -76,3 +25,5 @@ build-android:
     expire_in: 30 days
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual   # Har push'da avto ishlamasin — kerak bo'lganda "Play" bosasiz
+      allow_failure: true
