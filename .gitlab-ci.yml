@@ -29,7 +29,7 @@ build-android:
       when: manual   # Har push'da avto ishlamasin — kerak bo'lganda "Play" bosasiz
       allow_failure: true
 
-# Деплой POS-бэкенда на uic-cloud (10.0.0.35).
+# Деплой POS-бэкенда на uic-cloud (10.0.0.35), домен pos.milligrill.aiba.uz.
 # Runner: shell-executor на самом сервере (tag: pos-deploy), job выполняется
 # от пользователя hamrayev. Секреты живут в /home/hamrayev/deploy/milli-grill-pos.env
 # и в репозиторий не попадают.
@@ -51,13 +51,3 @@ deploy-pos:
   environment:
     name: production
     url: http://pos.milligrill.aiba.uz
-
-# ВРЕМЕННЫЙ probe: проверка, достаёт ли shared-runner до 10.0.0.35 (будет удалён)
-probe-net:
-  stage: build
-  image: curlimages/curl:latest
-  script:
-    - curl -m 10 -sv http://10.0.0.35:8006/health || true
-    - nc -zv -w 5 10.0.0.35 22 || true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
