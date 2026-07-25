@@ -1,0 +1,108 @@
+/* Theme-aware — only Nextcloud CSS custom properties, no hardcoded colors. */
+.pos-wrap {
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+    color: var(--color-main-text);
+}
+
+.pos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.pos-header__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.pos-select {
+    min-width: 200px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border-dark);
+    border-radius: var(--border-radius);
+    background: var(--color-main-background);
+    color: var(--color-main-text);
+}
+
+.pos-btn {
+    padding: 7px 14px;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-border-dark);
+    cursor: pointer;
+    background: var(--color-background-dark);
+    color: var(--color-main-text);
+}
+.pos-btn--primary {
+    background: var(--color-primary-element);
+    color: var(--color-primary-element-text);
+    border-color: var(--color-primary-element);
+}
+.pos-btn--ghost { background: transparent; }
+.pos-btn:disabled { opacity: .5; cursor: default; }
+
+.pos-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.pos-card {
+    background: var(--color-background-hover);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-large, 12px);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.pos-card__label { color: var(--color-text-maxcontrast); font-size: 13px; }
+.pos-card__value { font-size: 22px; font-weight: 600; }
+
+.pos-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+@media (max-width: 800px) { .pos-grid { grid-template-columns: 1fr; } }
+
+.pos-panel {
+    background: var(--color-main-background);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-large, 12px);
+    padding: 16px;
+}
+.pos-panel h3 { margin: 0 0 12px; }
+
+.pos-table { width: 100%; border-collapse: collapse; }
+.pos-table th, .pos-table td {
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--color-border);
+}
+.pos-table th { color: var(--color-text-maxcontrast); font-weight: 500; font-size: 13px; }
+
+.pos-muted { color: var(--color-text-maxcontrast); }
+
+.pos-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--color-text-maxcontrast);
+}
+
+.pos-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    background: var(--color-background-dark);
+    color: var(--color-main-text);
+}
+.pos-chip--paid, .pos-chip--sent { background: var(--color-success); color: var(--color-primary-element-text); }
+.pos-chip--cancelled, .pos-chip--failed { background: var(--color-error); color: var(--color-primary-element-text); }
+.pos-chip--open, .pos-chip--pending { background: var(--color-warning, var(--color-background-dark)); }

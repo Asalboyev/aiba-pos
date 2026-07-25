@@ -1,0 +1,52 @@
+# === OS / editor ===
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# === Python (pos backend) ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# === Node ===
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# === Flutter / Dart (pos-terminal) ===
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+**/pubspec.lock.bak
+**/generated_plugin_registrant.*
+**/flutter_export_environment.sh
+# Xcode / macOS build artefaktlari
+**/DerivedData/
+**/Pods/
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# === Docker / DB / uploads (test data) ===
+pos/uploads/
+pos/pos_uploads/
+pos/logs/
+pos/data/
+*.sqlite
+*.sqlite-journal
+
+# === IDE / editor ===
+*.log

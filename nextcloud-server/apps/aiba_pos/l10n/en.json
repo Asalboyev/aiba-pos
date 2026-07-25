@@ -1,0 +1,19 @@
+{"translations":{
+"POS — boshqaruv":"POS — management",
+"Demo ma'lumot":"Demo data",
+"Yangilash":"Refresh",
+"Restoran yo'q. \"Demo ma'lumot\" tugmasini bosing yoki cloud-os orqali restoran qo'shing.":"No restaurants. Click \"Demo data\" or add a restaurant via cloud-os.",
+"Bugungi savdo":"Today's sales",
+"Cheklar":"Receipts",
+"Naqd":"Cash",
+"Karta":"Card",
+"Mahsulotlar":"Products",
+"Nomi":"Name",
+"Narx":"Price",
+"Oxirgi cheklar":"Recent receipts",
+"Holat":"Status",
+"Summa":"Amount",
+"Fiskal":"Fiscal",
+"Demo ma'lumot yaratildi":"Demo data created",
+"Xato":"Error"
+},"pluralForm":"nplurals=2; plural=(n != 1);"}

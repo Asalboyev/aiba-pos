@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>aiba_pos</id>
+    <name>POS</name>
+    <summary>AIBA restaurant POS — menyu, savdo, fiskal chek, hisobotlar</summary>
+    <description>Restoran/kafeteriyalar uchun kassir POS. Backend = pos microservice (FastAPI), access = Nextcloud foydalanuvchi/guruhlari va korxonalar reyestri.</description>
+    <version>1.0.0</version>
+    <licence>agpl</licence>
+    <author>AIBA</author>
+    <namespace>AibaPos</namespace>
+    <category>office</category>
+    <dependencies>
+        <nextcloud min-version="28" max-version="33"/>
+    </dependencies>
+    <navigations>
+        <navigation>
+            <name>POS</name>
+            <route>aiba_pos.page.index</route>
+            <icon>app.svg</icon>
+            <order>8</order>
+        </navigation>
+    </navigations>
+</info>

@@ -1,0 +1,27 @@
+[project]
+name = "aiba_pos"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.12",
+    "uvicorn==0.34.0",
+    "tortoise-orm==0.25.1",
+    "asyncpg==0.31.0",
+    "aerich==0.9.1",
+    "celery==5.5.3",
+    "redis==6.4.0",
+    "httpx==0.28.1",
+    "pydantic==2.12.3",
+    "python-jose[cryptography]==3.3.0",
+    "python-dotenv==1.1.1",
+    "pytz==2025.2",
+]
+
+[tool.ruff]
+line-length = 119
+exclude = ["migrations", "venv"]
+
+[tool.aerich]
+tortoise_orm = "app.core.database.TORTOISE_ORM"
+location = "./migrations"
+src_folder = "./."

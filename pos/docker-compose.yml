@@ -1,0 +1,96 @@
+services:
+  pos-db:
+    image: postgres:15-alpine
+    container_name: aiba-pos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aiba_pos}
+      POSTGRES_USER: ${POSTGRES_USER:-aiba_pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiba_pos_pass}
+    volumes:
+      - pos_pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pos-redis:
+    image: redis:7-alpine
+    container_name: aiba-pos-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pos:
+    build: .
+    container_name: aiba-pos
+    restart: unless-stopped
+    depends_on:
+      pos-db:
+        condition: service_healthy
+      pos-redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      POSTGRES_HOST: pos-db
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://pos-redis:6379/0
+      CELERY_BROKER_URL: redis://pos-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://pos-redis:6379/1
+    volumes:
+      # Yuklangan rasmlar container rebuild'da yo'qolmasin uchun alohida volume.
+      - pos_uploads:/app/app/static/uploads
+    ports:
+      - "${POS_HOST_PORT:-8005}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  pos-celery-worker:
+    build: .
+    container_name: aiba-pos-celery-worker
+    restart: unless-stopped
+    depends_on:
+      pos-db:
+        condition: service_healthy
+      pos-redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      POSTGRES_HOST: pos-db
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://pos-redis:6379/0
+      CELERY_BROKER_URL: redis://pos-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://pos-redis:6379/1
+    command: celery -A app.core.celery.celery_app worker --loglevel=info --queues=pos --concurrency=2
+
+  pos-celery-beat:
+    build: .
+    container_name: aiba-pos-celery-beat
+    restart: unless-stopped
+    depends_on:
+      pos-redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      POSTGRES_HOST: pos-db
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://pos-redis:6379/0
+      CELERY_BROKER_URL: redis://pos-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://pos-redis:6379/1
+    command: celery -A app.core.celery.celery_app beat --loglevel=info
+
+volumes:
+  pos_pgdata:
+  pos_uploads:

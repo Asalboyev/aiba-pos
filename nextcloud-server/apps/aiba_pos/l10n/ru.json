@@ -1,0 +1,19 @@
+{"translations":{
+"POS — boshqaruv":"POS — управление",
+"Demo ma'lumot":"Демо данные",
+"Yangilash":"Обновить",
+"Restoran yo'q. \"Demo ma'lumot\" tugmasini bosing yoki cloud-os orqali restoran qo'shing.":"Нет ресторанов. Нажмите \"Демо данные\" или добавьте ресторан через cloud-os.",
+"Bugungi savdo":"Продажи за сегодня",
+"Cheklar":"Чеки",
+"Naqd":"Наличные",
+"Karta":"Карта",
+"Mahsulotlar":"Товары",
+"Nomi":"Название",
+"Narx":"Цена",
+"Oxirgi cheklar":"Последние чеки",
+"Holat":"Статус",
+"Summa":"Сумма",
+"Fiskal":"Фискал",
+"Demo ma'lumot yaratildi":"Демо данные созданы",
+"Xato":"Ошибка"
+},"pluralForm":"nplurals=4; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n%100>=11 && n%100<=14)? 2 : 3);"}

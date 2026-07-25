@@ -1,0 +1,16 @@
+fastapi==0.115.12
+uvicorn==0.34.0
+tortoise-orm==0.25.1
+asyncpg==0.31.0
+aerich==0.9.1
+pypika-tortoise==0.6.1
+celery==5.5.3
+redis==6.4.0
+hiredis==3.2.1
+httpx==0.28.1
+pydantic==2.12.3
+python-jose[cryptography]==3.3.0
+python-dotenv==1.1.1
+pytz==2025.2
+python-multipart==0.0.9
+Pillow==10.4.0

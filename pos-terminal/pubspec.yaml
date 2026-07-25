@@ -1,0 +1,69 @@
+name: aiba_pos_terminal
+description: "AIBA offline-first POS terminal (Windows + Android tablet) for the AIBA POS backend."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management (flutter-craft convention)
+  flutter_riverpod: ^2.6.1
+
+  # Networking
+  dio: ^5.7.0
+
+  # Local persistence (offline-first cache + pending order queue)
+  drift: ^2.21.0
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Secure JWT storage + plain config
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.2
+
+  # Connectivity-driven sync
+  connectivity_plus: ^6.0.5
+
+  # Idempotency keys
+  uuid: ^4.5.1
+
+  # ESC/POS receipt + QR + network printer.
+  # esc_pos_utils_plus is pinned to the 2.0.1+x line so its `image ^3`
+  # constraint is compatible with esc_pos_printer 4.1.0 (which pulls image ^3
+  # via esc_pos_utils). The receipt-building API (Generator, qrcode, etc.) is
+  # identical to the newer line for our needs.
+  esc_pos_utils_plus: 2.0.1+6
+  esc_pos_printer: ^4.1.0
+  # Chek logosini yuklab, ESC/POS raster'ga o'girish uchun. Transitive dep
+  # sifatida esc_pos_utils_plus keltiradi (image ^3.x) — versiyani cheklamaymiz.
+  image: any
+  # Used only for NetworkPrinter's PaperSize/CapabilityProfile (transitive of
+  # esc_pos_printer; declared explicitly so we can import it directly).
+  esc_pos_utils: ^1.1.0
+
+  # QR rendering in the on-screen receipt preview
+  qr_flutter: ^4.1.0
+
+  # Value equality for entities
+  equatable: ^2.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # Drift code generation
+  drift_dev: ^2.21.0
+  build_runner: ^2.4.13
+
+flutter:
+  uses-material-design: true
