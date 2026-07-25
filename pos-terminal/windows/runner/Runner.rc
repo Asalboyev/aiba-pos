@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "uz.aiba" "\0"
-            VALUE "FileDescription", "aiba_pos_terminal" "\0"
+            VALUE "FileDescription", "AIBA POS" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "aiba_pos_terminal" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 uz.aiba. All rights reserved." "\0"
             VALUE "OriginalFilename", "aiba_pos_terminal.exe" "\0"
-            VALUE "ProductName", "aiba_pos_terminal" "\0"
+            VALUE "ProductName", "AIBA POS" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -71,11 +71,29 @@ jobs:
         run: flutter build macos --release
         working-directory: pos-terminal
 
-      - name: Build DMG
+      - name: Package DMG
         run: |
+          APP=$(ls -d pos-terminal/build/macos/Build/Products/Release/*.app | head -1)
+          echo "app: $APP"
+          # Ad-hoc imzo — imzosiz app Apple Silicon'da "damaged" qattiq blokini
+          # beradi; ad-hoc imzo uni yumshoq "unidentified developer" (o'ng tugma
+          # -> Open bilan ochiladigan) holatga o'tkazadi.
+          codesign --force --deep --sign - "$APP" || true
           mkdir dmg-src
-          cp -R pos-terminal/build/macos/Build/Products/Release/aiba_pos_terminal.app dmg-src/
+          cp -R "$APP" dmg-src/
           ln -s /Applications dmg-src/Applications
+          # Qisqa o'rnatish yo'riqnomasi
+          cat > "dmg-src/OQING - o'rnatish.txt" <<'TXT'
+          AIBA POS — o'rnatish (macOS)
+
+          1) "AIBA POS" ilovasini yonidagi Applications papkasiga sudrab tashlang.
+          2) Applications ichida "AIBA POS" ustiga O'NG tugma bosib -> "Open".
+          3) Chiqadigan oynada yana "Open" bosing. Bir marta shunday qilinsa,
+             keyingi safar oddiy ochiladi.
+
+          (Ilova Apple sertifikati bilan imzolanmagani uchun macOS birinchi marta
+           ogohlantiradi — bu normal, yuqoridagi qadam bilan hal bo'ladi.)
+          TXT
           hdiutil create -volname "AIBA POS" -srcfolder dmg-src -ov -format UDZO AIBA-POS-macOS.dmg
 
       - name: Upload artifact
