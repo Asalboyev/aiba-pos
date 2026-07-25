@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/providers/core_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../menu/presentation/providers/menu_providers.dart';
+import '../../../reports/presentation/providers/reports_providers.dart';
 import 'orders_providers.dart';
 
 class SyncState {
@@ -82,6 +83,7 @@ class SyncService extends StateNotifier<SyncState> {
       final synced = await _ref.read(ordersRepositoryProvider).syncPending();
       _ref.invalidate(recentOrdersProvider);
       _ref.invalidate(unsyncedCountProvider);
+      _ref.invalidate(salesSummaryProvider);
       state = state.copyWith(
         syncing: false,
         lastSyncAt: DateTime.now(),

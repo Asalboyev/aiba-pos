@@ -24,6 +24,14 @@ class TodayScreen extends ConsumerWidget {
               child: Text('Hisobot olinmadi (oflayn?)\n$e',
                   textAlign: TextAlign.center),
             ),
+            const SizedBox(height: 16),
+            Center(
+              child: FilledButton.icon(
+                onPressed: () => ref.invalidate(salesSummaryProvider),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Qayta urinish'),
+              ),
+            ),
           ],
         ),
         data: (summary) => _SummaryView(summary: summary),

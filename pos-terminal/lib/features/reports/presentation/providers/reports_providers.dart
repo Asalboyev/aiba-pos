@@ -14,6 +14,8 @@ final reportsRepositoryProvider = Provider<ReportsRepository>((ref) {
   return ReportsRepositoryImpl(ref.watch(reportsRemoteDataSourceProvider));
 });
 
-final salesSummaryProvider = FutureProvider<SalesSummary>((ref) {
+/// autoDispose: ekrandan chiqilganda holat tashlanadi — qayta kirilganda
+/// yangidan so'raladi. Xato holati "yopishib" qolmaydi.
+final salesSummaryProvider = FutureProvider.autoDispose<SalesSummary>((ref) {
   return ref.watch(reportsRepositoryProvider).salesSummary();
 });
