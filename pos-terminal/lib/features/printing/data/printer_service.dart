@@ -240,7 +240,8 @@ public class AibaRawPrint {
   public static void Send(string printer, byte[] bytes) {
     IntPtr h;
     if (!OpenPrinter(printer, out h, IntPtr.Zero))
-      throw new Exception("Printer ochilmadi: " + printer);
+      throw new Exception("Printer ochilmadi: " + printer +
+        " (Win32 kod " + Marshal.GetLastWin32Error() + ")");
     try {
       var di = new DOCINFOA(); di.pDocName = "AIBA POS"; di.pDataType = "RAW";
       if (!StartDocPrinter(h, 1, di)) throw new Exception("StartDocPrinter xato");
@@ -260,6 +261,21 @@ public class AibaRawPrint {
 '@
 try { Add-Type -TypeDefinition $code -Language CSharp } catch { Fail ("PowerShell Add-Type xatosi: " + $_.Exception.Message) }
 $printer = $env:AIBA_PRINTER
+if (-not [string]::IsNullOrWhiteSpace($printer)) {
+  # Sozlamalarda kiritilgan nom aynan topilmasa: avval qisman moslik
+  # ("Xprint" -> "Xprinter XP-58IIH"), bo'lmasa avtomatik aniqlashga o'tamiz.
+  $names = @(Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+  if ($names -notcontains $printer) {
+    $m = @($names | Where-Object { $_ -like ('*' + $printer + '*') })
+    if ($m.Count -ge 1) {
+      Write-Output "AIBA: '$printer' qisman mos keldi: $($m[0])"
+      $printer = $m[0]
+    } else {
+      Write-Output "AIBA: '$printer' nomli printer yo'q, avtomatik aniqlashga o'tildi"
+      $printer = ''
+    }
+  }
+}
 if ([string]::IsNullOrWhiteSpace($printer)) {
   # Avtomatik aniqlash: virtual printerlarni tashlab, chek (termal ESC/POS)
   # printerga o'xshaganini tanlaymiz. Tartib: nom/drayver kalit so'zi ->
@@ -311,7 +327,8 @@ $bytes = [System.IO.File]::ReadAllBytes($env:AIBA_BINFILE)
 try {
   [AibaRawPrint]::Send($printer, $bytes)
 } catch {
-  Fail ("Chop etish xatosi (" + $printer + "): " + $_.Exception.Message)
+  $names = @(Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join '; '
+  Fail ("Chop etish xatosi (" + $printer + "): " + $_.Exception.Message + " | Mavjud printerlar: " + $names)
 }
 ''';
 
