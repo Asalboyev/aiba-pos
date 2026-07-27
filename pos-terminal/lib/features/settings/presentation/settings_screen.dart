@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +22,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _terminalCode;
   late final TextEditingController _printerHost;
   late final TextEditingController _printerPort;
+  late final TextEditingController _printerName;
   bool _printerUsb = false;
   bool _saved = false;
   bool _testing = false;
@@ -32,6 +35,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _terminalCode = TextEditingController(text: _config.terminalCode);
     _printerHost = TextEditingController(text: _config.printerHost ?? '');
     _printerPort = TextEditingController(text: _config.printerPort.toString());
+    _printerName = TextEditingController(text: _config.printerName);
     _printerUsb = _config.printerUsb;
   }
 
@@ -41,6 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _terminalCode.dispose();
     _printerHost.dispose();
     _printerPort.dispose();
+    _printerName.dispose();
     super.dispose();
   }
 
@@ -52,6 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       int.tryParse(_printerPort.text.trim()) ?? AppConfig.defaultPrinterPort,
     );
     await _config.setPrinterUsb(_printerUsb);
+    await _config.setPrinterName(_printerName.text);
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -111,9 +117,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChanged: (v) => setState(() => _printerUsb = v),
                 title: const Text('USB printer'),
                 subtitle: const Text(
-                    'Kompyuterga USB orqali ulangan chek printer (IP shart emas)'),
+                    'Kompyuterga USB orqali ulangan chek printer (IP shart emas). '
+                    'Hech narsa sozlanmasa ham USB printer avtomatik aniqlanadi.'),
                 contentPadding: EdgeInsets.zero,
               ),
+              if (Platform.isWindows) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _printerName,
+                  decoration: const InputDecoration(
+                    labelText: 'Printer nomi (Windows USB)',
+                    hintText: 'Bo\'sh = avtomatik aniqlanadi',
+                    helperText:
+                        'Nomi Windows: Sozlamalar → Printerlar ro\'yxatidagidek',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 controller: _printerHost,

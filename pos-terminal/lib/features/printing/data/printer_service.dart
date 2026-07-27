@@ -35,34 +35,52 @@ class PrinterService {
   Future<PrintReport> printReceipt(ReceiptData data) async {
     debugPrint('[PrinterService] printing: restaurant="${data.restaurantName}" '
         'payments=${data.payments.map((p) => p.method.code).join(',')}');
-    if (_config.printerUsb) {
-      return _sendUsb(await ReceiptBuilder.build(data));
-    }
+    final bytes = await ReceiptBuilder.build(data);
+    if (_config.printerUsb) return _sendLocal(bytes);
     final host = _config.printerHost;
-    if (host == null || host.isEmpty) {
-      // No printer configured — log a preview and continue.
-      debugPrint('[PrinterService] No printer configured. Receipt preview:\n'
-          '${_previewText(data)}');
-      return const PrintReport(
-        PrintOutcome.noPrinter,
-        'Printer sozlanmagan — chek faqat ekranda',
-      );
+    if (host != null && host.isNotEmpty) return _sendNetwork(host, bytes);
+    // Hech narsa sozlanmagan — Windows/macOS'da ulangan USB printerni
+    // avtomatik urinib ko'ramiz (nol-sozlama). Topilmasa chek ekranda qoladi,
+    // checkout baribir yakunlanadi.
+    if (Platform.isWindows || Platform.isMacOS) {
+      final report = await _sendLocal(bytes);
+      if (report.outcome == PrintOutcome.printed) return report;
+      debugPrint('[PrinterService] auto USB print failed '
+          '(${report.message}). Receipt preview:\n${_previewText(data)}');
+      return PrintReport(PrintOutcome.noPrinter, report.message);
     }
-    return _sendNetwork(host, await ReceiptBuilder.build(data));
+    debugPrint('[PrinterService] No printer configured. Receipt preview:\n'
+        '${_previewText(data)}');
+    return const PrintReport(
+      PrintOutcome.noPrinter,
+      'Printer sozlanmagan — chek faqat ekranda',
+    );
   }
 
   /// Prints a short hardware test ticket through the configured transport.
   Future<PrintReport> printTest() async {
-    final bytes = await ReceiptBuilder.buildTest();
-    if (_config.printerUsb) return _sendUsb(bytes);
+    final bytes = await ReceiptBuilder.buildTest(paperWidth: 80);
+    if (_config.printerUsb) return _sendLocal(bytes);
     final host = _config.printerHost;
-    if (host == null || host.isEmpty) {
-      return const PrintReport(
-        PrintOutcome.noPrinter,
-        'Printer sozlanmagan — USB yoki IP kiriting',
-      );
-    }
-    return _sendNetwork(host, bytes);
+    if (host != null && host.isNotEmpty) return _sendNetwork(host, bytes);
+    // Sozlanmagan bo'lsa ham lokal USB printerga urinamiz — kassir hech
+    // narsa kiritmasdan test chekini olishi kerak.
+    if (Platform.isWindows || Platform.isMacOS) return _sendLocal(bytes);
+    return const PrintReport(
+      PrintOutcome.noPrinter,
+      'Printer sozlanmagan — USB yoki IP kiriting',
+    );
+  }
+
+  /// Lokal (USB) chop etish — OS bo'yicha yo'naltiradi: macOS → CUPS usb
+  /// backend, Windows → print spooler RAW (winspool). Linux hozircha yo'q.
+  Future<PrintReport> _sendLocal(List<int> bytes) {
+    if (Platform.isMacOS) return _sendUsb(bytes);
+    if (Platform.isWindows) return _sendWindows(bytes);
+    return Future.value(const PrintReport(
+      PrintOutcome.failed,
+      'USB chop etish faqat Windows va macOS-da qo\'llanadi. IP printer ishlating.',
+    ));
   }
 
   Future<PrintReport> _sendNetwork(String host, List<int> bytes) async {
@@ -129,6 +147,128 @@ class PrinterService {
     final m = RegExp(r'direct (usb://\S+)').firstMatch(res.stdout.toString());
     return m?.group(1);
   }
+
+  /// Windows RAW chop etish — print spooler orqali (winspool.drv), ESC/POS
+  /// baytlarini o'zgartirmasdan yuboradi. Printer nomi Sozlamalardan olinadi;
+  /// bo'sh bo'lsa skript o'zi chek-printerni avtomatik aniqlaydi (virtual
+  /// printerlar tashlanadi, termal/POS nomlilar afzal). PowerShell'ga kichik
+  /// C# (RawPrinterHelper) yuklaymiz — qo'shimcha plagin kerak emas.
+  Future<PrintReport> _sendWindows(List<int> bytes) async {
+    try {
+      final tmp = Directory.systemTemp.path;
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final binPath = '$tmp\\aiba-receipt-$stamp.bin';
+      final ps1Path = '$tmp\\aiba-print-$stamp.ps1';
+      await File(binPath).writeAsBytes(bytes, flush: true);
+      await File(ps1Path).writeAsString(_winPrintScript);
+      try {
+        final res = await Process.run(
+          'powershell',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1Path],
+          environment: {
+            'AIBA_BINFILE': binPath,
+            'AIBA_PRINTER': _config.printerName, // bo'sh = standart printer
+          },
+        ).timeout(const Duration(seconds: 30));
+        if (res.exitCode != 0) {
+          final err = ('${res.stdout}\n${res.stderr}').trim();
+          debugPrint('[PrinterService] windows print failed: $err');
+          final last = err.isEmpty
+              ? 'noma\'lum xato'
+              : err.split('\n').where((l) => l.trim().isNotEmpty).last.trim();
+          return PrintReport(PrintOutcome.failed, 'Printerga yuborilmadi: $last');
+        }
+        return const PrintReport(PrintOutcome.printed, 'Chek chop etildi');
+      } finally {
+        try {
+          await File(binPath).delete();
+        } catch (_) {}
+        try {
+          await File(ps1Path).delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('[PrinterService] windows print error: $e');
+      return PrintReport(PrintOutcome.failed, 'Chop etish xatosi: $e');
+    }
+  }
+
+  // PowerShell RAW-print skripti. C# RawPrinterHelper winspool.drv orqali
+  // StartDocPrinter(RAW) + WritePrinter qiladi — ESC/POS baytlari xom holicha
+  // ketadi (drayver rasterlamaydi). Printer nomi/bin fayli env orqali beriladi.
+  static const String _winPrintScript = r'''
+$ErrorActionPreference = 'Stop'
+$code = @'
+using System;
+using System.Runtime.InteropServices;
+public class AibaRawPrint {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public class DOCINFOA {
+    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+  }
+  [DllImport("winspool.Drv", EntryPoint="OpenPrinterA", SetLastError=true, CharSet=CharSet.Ansi)]
+  public static extern bool OpenPrinter(string src, out IntPtr h, IntPtr pd);
+  [DllImport("winspool.Drv", EntryPoint="ClosePrinter")]
+  public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartDocPrinterA", CharSet=CharSet.Ansi)]
+  public static extern bool StartDocPrinter(IntPtr h, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+  [DllImport("winspool.Drv", EntryPoint="EndDocPrinter")]
+  public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="StartPagePrinter")]
+  public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="EndPagePrinter")]
+  public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.Drv", EntryPoint="WritePrinter")]
+  public static extern bool WritePrinter(IntPtr h, IntPtr buf, int count, out int written);
+  public static void Send(string printer, byte[] bytes) {
+    IntPtr h;
+    if (!OpenPrinter(printer, out h, IntPtr.Zero))
+      throw new Exception("Printer ochilmadi: " + printer);
+    try {
+      var di = new DOCINFOA(); di.pDocName = "AIBA POS"; di.pDataType = "RAW";
+      if (!StartDocPrinter(h, 1, di)) throw new Exception("StartDocPrinter xato");
+      try {
+        StartPagePrinter(h);
+        IntPtr p = Marshal.AllocCoTaskMem(bytes.Length);
+        try {
+          Marshal.Copy(bytes, 0, p, bytes.Length);
+          int w;
+          if (!WritePrinter(h, p, bytes.Length, out w)) throw new Exception("WritePrinter xato");
+        } finally { Marshal.FreeCoTaskMem(p); }
+        EndPagePrinter(h);
+      } finally { EndDocPrinter(h); }
+    } finally { ClosePrinter(h); }
+  }
+}
+'@
+Add-Type -TypeDefinition $code -Language CSharp
+$printer = $env:AIBA_PRINTER
+if ([string]::IsNullOrWhiteSpace($printer)) {
+  # Avtomatik aniqlash: virtual printerlarni tashlab, chek (termal ESC/POS)
+  # printerga o'xshaganini tanlaymiz. Tartib: nom/drayver kalit so'zi ->
+  # USB portdagi printer -> standart printer -> yagona real printer.
+  $all = @(Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue)
+  $virtual = 'Print to PDF|XPS|OneNote|Fax|AnyDesk|PDF24|Foxit|Adobe PDF'
+  $real = @($all | Where-Object { ($_.Name + ' ' + $_.DriverName) -notmatch $virtual })
+  $kw = 'POS|THERM|RECEIPT|XPRINTER|XP-|RONGTA|RP-|TM-|GP-|GOOJPRT|SEWOO|BIXOLON|CITIZEN|ZYWELL|HOIN|OCPP|(^|[^0-9])(58|80)([^0-9]|$)'
+  $cand = @($real | Where-Object { ($_.Name + ' ' + $_.DriverName) -match $kw } |
+    Sort-Object -Property @{Expression={$_.PortName -like 'USB*'};Descending=$true},
+                          @{Expression={$_.Default};Descending=$true})
+  if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.PortName -like 'USB*' }) }
+  if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.Default }) }
+  if ($cand.Count -eq 0 -and $real.Count -eq 1) { $cand = $real }
+  if ($cand.Count -eq 0) {
+    Write-Error "Chek printer topilmadi — USB kabelni tekshiring yoki Sozlamalarda printer nomini kiriting."
+    exit 1
+  }
+  $printer = $cand[0].Name
+  Write-Output "AIBA: printer avtomatik tanlandi: $printer"
+}
+$bytes = [System.IO.File]::ReadAllBytes($env:AIBA_BINFILE)
+[AibaRawPrint]::Send($printer, $bytes)
+''';
 
   String _previewText(ReceiptData d) {
     final b = StringBuffer()

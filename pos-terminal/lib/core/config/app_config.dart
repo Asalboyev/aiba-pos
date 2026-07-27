@@ -16,6 +16,7 @@ class AppConfig {
   static const _kPrinterHost = 'printer_host';
   static const _kPrinterPort = 'printer_port';
   static const _kPrinterUsb = 'printer_usb';
+  static const _kPrinterName = 'printer_name';
   static const _kOrderSeqDate = 'order_seq_date';
   static const _kOrderSeq = 'order_seq';
   static const _kToken = 'access_token';
@@ -52,6 +53,15 @@ class AppConfig {
   /// instead of a network one (takes precedence over [printerHost]).
   bool get printerUsb => _prefs.getBool(_kPrinterUsb) ?? false;
   Future<void> setPrinterUsb(bool value) => _prefs.setBool(_kPrinterUsb, value);
+
+  /// Windows USB chop etish uchun o'rnatilgan printer nomi. Bo'sh bo'lsa —
+  /// tizimning standart printeri ishlatiladi. (macOS'da kerak emas.)
+  String get printerName {
+    final v = _prefs.getString(_kPrinterName);
+    return (v == null) ? '' : v.trim();
+  }
+  Future<void> setPrinterName(String value) =>
+      _prefs.setString(_kPrinterName, value.trim());
 
   /// Next daily order number, generated locally so every printed receipt has
   /// one even offline. Resets each day; prefixed with the terminal code so
