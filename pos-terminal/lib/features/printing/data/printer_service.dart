@@ -2,6 +2,7 @@
 // package, so its PaperSize/CapabilityProfile come from there. The receipt
 // byte stream itself is produced by ReceiptBuilder using esc_pos_utils_plus —
 // the output is a plain List<int>, so the two packages interoperate cleanly.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:esc_pos_printer/esc_pos_printer.dart';
@@ -160,7 +161,13 @@ class PrinterService {
       final binPath = '$tmp\\aiba-receipt-$stamp.bin';
       final ps1Path = '$tmp\\aiba-print-$stamp.ps1';
       await File(binPath).writeAsBytes(bytes, flush: true);
-      await File(ps1Path).writeAsString(_winPrintScript);
+      // .ps1 UTF-8 BOM bilan yoziladi: BOM'siz PowerShell 5.1 faylni ANSI
+      // deb o'qiydi va har qanday non-ASCII belgi skriptni buzadi
+      // (TerminatorExpectedAtEndOfString).
+      await File(ps1Path).writeAsBytes(
+        [0xEF, 0xBB, 0xBF, ...utf8.encode(_winPrintScript)],
+        flush: true,
+      );
       try {
         final res = await Process.run(
           'powershell',
@@ -260,7 +267,7 @@ if ([string]::IsNullOrWhiteSpace($printer)) {
   if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.Default }) }
   if ($cand.Count -eq 0 -and $real.Count -eq 1) { $cand = $real }
   if ($cand.Count -eq 0) {
-    Write-Error "Chek printer topilmadi — USB kabelni tekshiring yoki Sozlamalarda printer nomini kiriting."
+    Write-Error "Chek printer topilmadi - USB kabelni tekshiring yoki Sozlamalarda printer nomini kiriting."
     exit 1
   }
   $printer = $cand[0].Name
