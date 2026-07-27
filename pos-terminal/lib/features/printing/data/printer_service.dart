@@ -174,16 +174,21 @@ class PrinterService {
           ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1Path],
           environment: {
             'AIBA_BINFILE': binPath,
-            'AIBA_PRINTER': _config.printerName, // bo'sh = standart printer
+            'AIBA_PRINTER': _config.printerName, // bo'sh = avtomatik aniqlash
           },
-        ).timeout(const Duration(seconds: 30));
+        ).timeout(const Duration(seconds: 60));
         if (res.exitCode != 0) {
-          final err = ('${res.stdout}\n${res.stderr}').trim();
-          debugPrint('[PrinterService] windows print failed: $err');
-          final last = err.isEmpty
-              ? 'noma\'lum xato'
-              : err.split('\n').where((l) => l.trim().isNotEmpty).last.trim();
-          return PrintReport(PrintOutcome.failed, 'Printerga yuborilmadi: $last');
+          final errText = res.stderr.toString().trim();
+          final outText = res.stdout.toString().trim();
+          debugPrint('[PrinterService] windows print failed:\n'
+              'stdout: $outText\nstderr: $errText');
+          // Skript xatoni stderr'ga bitta toza qator qilib yozadi (Fail
+          // funksiyasi) — birinchi bo'sh bo'lmagan qatorni ko'rsatamiz.
+          final src = errText.isNotEmpty ? errText : outText;
+          final lines =
+              src.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty);
+          final msg = lines.isEmpty ? 'noma\'lum xato' : lines.first;
+          return PrintReport(PrintOutcome.failed, 'Printerga yuborilmadi: $msg');
         }
         return const PrintReport(PrintOutcome.printed, 'Chek chop etildi');
       } finally {
@@ -205,6 +210,9 @@ class PrinterService {
   // ketadi (drayver rasterlamaydi). Printer nomi/bin fayli env orqali beriladi.
   static const String _winPrintScript = r'''
 $ErrorActionPreference = 'Stop'
+# Xatolarni bitta toza qator qilib stderr'ga yozamiz - Dart tomonda shu
+# qator kassirga ko'rsatiladi (PowerShell'ning shovqinli formati o'rniga).
+function Fail([string]$msg) { [Console]::Error.WriteLine($msg); exit 1 }
 $code = @'
 using System;
 using System.Runtime.InteropServices;
@@ -250,31 +258,57 @@ public class AibaRawPrint {
   }
 }
 '@
-Add-Type -TypeDefinition $code -Language CSharp
+try { Add-Type -TypeDefinition $code -Language CSharp } catch { Fail ("PowerShell Add-Type xatosi: " + $_.Exception.Message) }
 $printer = $env:AIBA_PRINTER
 if ([string]::IsNullOrWhiteSpace($printer)) {
   # Avtomatik aniqlash: virtual printerlarni tashlab, chek (termal ESC/POS)
   # printerga o'xshaganini tanlaymiz. Tartib: nom/drayver kalit so'zi ->
   # USB portdagi printer -> standart printer -> yagona real printer.
+  # USB portlar: USB001... yoki ESDPRT001 (Xprinter va o'xshash drayverlar).
   $all = @(Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue)
   $virtual = 'Print to PDF|XPS|OneNote|Fax|AnyDesk|PDF24|Foxit|Adobe PDF'
   $real = @($all | Where-Object { ($_.Name + ' ' + $_.DriverName) -notmatch $virtual })
-  $kw = 'POS|THERM|RECEIPT|XPRINTER|XP-|RONGTA|RP-|TM-|GP-|GOOJPRT|SEWOO|BIXOLON|CITIZEN|ZYWELL|HOIN|OCPP|(^|[^0-9])(58|80)([^0-9]|$)'
+  $kw = 'POS|THERM|RECEIPT|CHEK|AIBA|XPRINTER|XP-|RONGTA|RP-|TM-|GP-|GOOJPRT|SEWOO|BIXOLON|CITIZEN|ZYWELL|HOIN|OCPP|GENERIC|(^|[^0-9])(58|80)([^0-9]|$)'
+  $usbPort = '^(USB|ESDPRT|POS)'
   $cand = @($real | Where-Object { ($_.Name + ' ' + $_.DriverName) -match $kw } |
-    Sort-Object -Property @{Expression={$_.PortName -like 'USB*'};Descending=$true},
+    Sort-Object -Property @{Expression={$_.PortName -match $usbPort};Descending=$true},
                           @{Expression={$_.Default};Descending=$true})
-  if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.PortName -like 'USB*' }) }
+  if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.PortName -match $usbPort }) }
   if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.Default }) }
   if ($cand.Count -eq 0 -and $real.Count -eq 1) { $cand = $real }
-  if ($cand.Count -eq 0) {
-    Write-Error "Chek printer topilmadi - USB kabelni tekshiring yoki Sozlamalarda printer nomini kiriting."
-    exit 1
+  if ($cand.Count -gt 0) {
+    $printer = $cand[0].Name
+    Write-Output "AIBA: printer avtomatik tanlandi: $printer"
+  } else {
+    if ($real.Count -gt 1) {
+      Fail ("Qaysi biri chek printer ekani aniqlanmadi. Sozlamalarda printer nomini kiriting. Printerlar: " + (($real | ForEach-Object { $_.Name }) -join '; '))
+    }
+    # Windows'da printer o'rnatilmagan. USB printer porti ko'rinsa,
+    # Windows'ning ichki 'Generic / Text Only' drayveri bilan avtomatik
+    # o'rnatamiz - RAW rejimda ESC/POS baytlari baribir o'zgarmasdan o'tadi.
+    $port = @(Get-PrinterPort -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '^(USB\d|ESDPRT)' }) | Select-Object -First 1
+    if ($port -eq $null) {
+      Fail "Chek printer topilmadi: USB kabel va printer quvvatini tekshiring."
+    }
+    try {
+      if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) {
+        Add-PrinterDriver -Name 'Generic / Text Only' -ErrorAction Stop
+      }
+      Add-Printer -Name 'AIBA Chek Printer' -DriverName 'Generic / Text Only' -PortName $port.Name -ErrorAction Stop
+      $printer = 'AIBA Chek Printer'
+      Write-Output "AIBA: printer avtomatik o'rnatildi: $printer"
+    } catch {
+      Fail ("Printer Windows'ga o'rnatilmagan va avtomatik o'rnatib bo'lmadi (" + $_.Exception.Message + "). Printer drayverini o'rnating yoki Sozlamalarda nomini kiriting.")
+    }
   }
-  $printer = $cand[0].Name
-  Write-Output "AIBA: printer avtomatik tanlandi: $printer"
 }
 $bytes = [System.IO.File]::ReadAllBytes($env:AIBA_BINFILE)
-[AibaRawPrint]::Send($printer, $bytes)
+try {
+  [AibaRawPrint]::Send($printer, $bytes)
+} catch {
+  Fail ("Chop etish xatosi (" + $printer + "): " + $_.Exception.Message)
+}
 ''';
 
   String _previewText(ReceiptData d) {
