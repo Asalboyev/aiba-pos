@@ -17,6 +17,7 @@ class AppConfig {
   static const _kPrinterPort = 'printer_port';
   static const _kPrinterUsb = 'printer_usb';
   static const _kPrinterName = 'printer_name';
+  static const _kCommunicatorUrl = 'communicator_url';
   static const _kOrderSeqDate = 'order_seq_date';
   static const _kOrderSeq = 'order_seq';
   static const _kToken = 'access_token';
@@ -25,6 +26,10 @@ class AppConfig {
   // (paths appended by the datasources). Dev: http://<mac-ip>:18001
   static const defaultBaseUrl = 'https://next.aiba.uz';
   static const defaultPrinterPort = 9100;
+
+  // E-POS Communicator shu kassa kompyuterida ishlaydi (fiskal modul USB'da).
+  // Dokumentatsiya bo'yicha prod manzili doim localhost:8347.
+  static const defaultCommunicatorUrl = 'http://127.0.0.1:8347/uzpos';
 
   String get baseUrl => _prefs.getString(_kBaseUrl) ?? defaultBaseUrl;
   Future<void> setBaseUrl(String value) => _prefs.setString(_kBaseUrl, value.trim());
@@ -62,6 +67,16 @@ class AppConfig {
   }
   Future<void> setPrinterName(String value) =>
       _prefs.setString(_kPrinterName, value.trim());
+
+  /// Kassadagi E-POS Communicator manzili (fiskal ko'prik). Bo'sh qoldirilsa
+  /// standart localhost ishlatiladi.
+  String get communicatorUrl {
+    final v = _prefs.getString(_kCommunicatorUrl)?.trim();
+    return (v == null || v.isEmpty) ? defaultCommunicatorUrl : v;
+  }
+
+  Future<void> setCommunicatorUrl(String value) =>
+      _prefs.setString(_kCommunicatorUrl, value.trim());
 
   /// Next daily order number, generated locally so every printed receipt has
   /// one even offline. Resets each day; prefixed with the terminal code so

@@ -3,8 +3,13 @@ import '../../../../core/utils/money.dart';
 import '../../domain/entities/shift.dart';
 
 class ShiftRemoteDataSource {
-  ShiftRemoteDataSource(this._client);
+  ShiftRemoteDataSource(this._client, {this.onEposRelay});
   final DioClient _client;
+
+  /// "E-POS (kassa orqali)" rejimida server smena ochish/yopish uchun
+  /// Communicator payload'ini qaytaradi — uni lokal yuborish uchun chaqiriladi
+  /// (fire-and-forget, fiskal ko'prikka ulanadi).
+  final Future<void> Function(Map<String, dynamic>? epos)? onEposRelay;
 
   static Shift? _parse(Map<String, dynamic>? j) {
     if (j == null) return null;
@@ -38,6 +43,8 @@ class ShiftRemoteDataSource {
       data: {'opening_cash': openingCash},
     );
     final shift = (res.data?['shift'] as Map?)?.cast<String, dynamic>();
+    // ignore: unawaited_futures
+    onEposRelay?.call((res.data?['epos'] as Map?)?.cast<String, dynamic>());
     final parsed = _parse(shift);
     if (parsed == null) throw StateError('Smena ochilmadi');
     return parsed;
@@ -50,6 +57,8 @@ class ShiftRemoteDataSource {
     );
     final z = (res.data?['z_report'] as Map?)?.cast<String, dynamic>() ??
         (res.data?['shift'] as Map?)?.cast<String, dynamic>();
+    // ignore: unawaited_futures
+    onEposRelay?.call((res.data?['epos'] as Map?)?.cast<String, dynamic>());
     final parsed = _parse(z);
     if (parsed == null) throw StateError('Smena yopilmadi');
     return parsed;

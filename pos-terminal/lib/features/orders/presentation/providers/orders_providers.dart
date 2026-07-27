@@ -4,6 +4,7 @@ import '../../../../core/providers/core_providers.dart';
 import '../../../menu/presentation/providers/menu_providers.dart';
 import '../../data/datasources/orders_remote_datasource.dart';
 import '../../data/datasources/pending_orders_local_datasource.dart';
+import '../../data/fiscal_bridge_service.dart';
 import '../../data/repositories/orders_repository_impl.dart';
 import '../../domain/entities/pending_order.dart';
 import '../../domain/repositories/orders_repository.dart';
@@ -22,6 +23,15 @@ final ordersRepositoryProvider = Provider<OrdersRepository>((ref) {
     remote: ref.watch(ordersRemoteDataSourceProvider),
     sync: ref.watch(syncRemoteDataSourceProvider),
     local: ref.watch(pendingOrdersLocalDataSourceProvider),
+  );
+});
+
+/// Fiskal ko'prik — "E-POS (kassa orqali)" rejimida navbatdagi cheklarni
+/// lokal Communicator orqali soliqqa yuboradi.
+final fiscalBridgeProvider = Provider<FiscalBridgeService>((ref) {
+  return FiscalBridgeService(
+    ref.watch(dioClientProvider),
+    ref.watch(appConfigProvider),
   );
 });
 

@@ -44,6 +44,14 @@ class PosSaleScreen extends ConsumerWidget {
     ref.invalidate(recentOrdersProvider);
     ref.invalidate(unsyncedCountProvider);
 
+    // Kassa-relay fiskal: navbatga tushgan chekni darhol lokal Communicator
+    // orqali yuborishga urinamiz (fire-and-forget — dialog holatni o'zi
+    // qayta so'rab turadi va "sent" bo'lganda QR bilan yangilanadi).
+    if (result.synced) {
+      // ignore: unawaited_futures
+      ref.read(fiscalBridgeProvider).run();
+    }
+
     // 2) Build receipt data and (optionally) print.
     final session = ref.read(sessionProvider);
     final r = session?.restaurant;

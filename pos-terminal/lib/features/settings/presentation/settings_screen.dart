@@ -23,6 +23,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late final TextEditingController _printerHost;
   late final TextEditingController _printerPort;
   late final TextEditingController _printerName;
+  late final TextEditingController _communicatorUrl;
   bool _printerUsb = false;
   bool _saved = false;
   bool _testing = false;
@@ -36,6 +37,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _printerHost = TextEditingController(text: _config.printerHost ?? '');
     _printerPort = TextEditingController(text: _config.printerPort.toString());
     _printerName = TextEditingController(text: _config.printerName);
+    _communicatorUrl = TextEditingController(text: _config.communicatorUrl);
     _printerUsb = _config.printerUsb;
   }
 
@@ -46,6 +48,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _printerHost.dispose();
     _printerPort.dispose();
     _printerName.dispose();
+    _communicatorUrl.dispose();
     super.dispose();
   }
 
@@ -58,6 +61,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     await _config.setPrinterUsb(_printerUsb);
     await _config.setPrinterName(_printerName.text);
+    await _config.setCommunicatorUrl(_communicatorUrl.text);
     if (!mounted) return;
     setState(() => _saved = true);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -154,6 +158,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 28),
+              const Text('Fiskal modul (E-POS Communicator)',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _communicatorUrl,
+                decoration: const InputDecoration(
+                  labelText: 'Communicator manzili',
+                  hintText: AppConfig.defaultCommunicatorUrl,
+                  helperText:
+                      'E-POS Communicator shu kompyuterda ishlasa o\'zgartirmang',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.url,
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(

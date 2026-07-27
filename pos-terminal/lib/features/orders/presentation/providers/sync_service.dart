@@ -81,6 +81,10 @@ class SyncService extends StateNotifier<SyncState> {
       // yangilaymiz. Sinxronlash tugmasi bilan qo'lda ham chaqirsa bo'ladi.
       await _ref.read(sessionProvider.notifier).refreshRestaurant();
       final synced = await _ref.read(ordersRepositoryProvider).syncPending();
+      // Fiskal ko'prik: navbatda qolgan cheklarni lokal E-POS Communicator
+      // orqali yuborishga urinamiz (epos_terminal rejimi; boshqa rejimlarda
+      // server bo'sh ro'yxat qaytaradi — arzon no-op).
+      await _ref.read(fiscalBridgeProvider).run();
       _ref.invalidate(recentOrdersProvider);
       _ref.invalidate(unsyncedCountProvider);
       _ref.invalidate(salesSummaryProvider);
