@@ -271,9 +271,13 @@ if ([string]::IsNullOrWhiteSpace($printer)) {
   $kw = 'POS|THERM|RECEIPT|CHEK|AIBA|XPRINTER|XP-|RONGTA|RP-|TM-|GP-|GOOJPRT|SEWOO|BIXOLON|CITIZEN|ZYWELL|HOIN|OCPP|GENERIC|(^|[^0-9])(58|80)([^0-9]|$)'
   $usbPort = '^(USB|ESDPRT|POS)'
   $cand = @($real | Where-Object { ($_.Name + ' ' + $_.DriverName) -match $kw } |
-    Sort-Object -Property @{Expression={$_.PortName -match $usbPort};Descending=$true},
+    Sort-Object -Property @{Expression={-not $_.WorkOffline};Descending=$true},
+                          @{Expression={$_.PortName -match $usbPort};Descending=$true},
                           @{Expression={$_.Default};Descending=$true})
-  if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.PortName -match $usbPort }) }
+  if ($cand.Count -eq 0) {
+    $cand = @($real | Where-Object { $_.PortName -match $usbPort } |
+      Sort-Object -Property @{Expression={-not $_.WorkOffline};Descending=$true})
+  }
   if ($cand.Count -eq 0) { $cand = @($real | Where-Object { $_.Default }) }
   if ($cand.Count -eq 0 -and $real.Count -eq 1) { $cand = $real }
   if ($cand.Count -gt 0) {
