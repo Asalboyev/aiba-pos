@@ -55,6 +55,11 @@ class CartPanel extends ConsumerWidget {
                       onInc: () => notifier.increment(i),
                       onDec: () => notifier.decrement(i),
                       onRemove: () => notifier.removeAt(i),
+                      onQtyTap: () async {
+                        final qty = await _QtyDialog.show(
+                            context, cart.items[i]);
+                        if (qty != null) notifier.setQty(i, qty);
+                      },
                     ),
                   ),
           ),
@@ -109,18 +114,28 @@ class CartPanel extends ConsumerWidget {
   }
 }
 
+/// Miqdorni odam o'qiydigan ko'rinishda: 2 → "2", 0.4 → "0.4" (kg).
+String _fmtQty(num q) {
+  if (q % 1 == 0) return q.toInt().toString();
+  var s = q.toStringAsFixed(3);
+  s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  return s;
+}
+
 class _CartLine extends StatelessWidget {
   const _CartLine({
     required this.item,
     required this.onInc,
     required this.onDec,
     required this.onRemove,
+    required this.onQtyTap,
   });
 
   final CartItem item;
   final VoidCallback onInc;
   final VoidCallback onDec;
   final VoidCallback onRemove;
+  final VoidCallback onQtyTap;
 
   @override
   Widget build(BuildContext context) {
@@ -134,13 +149,22 @@ class _CartLine extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _RoundAction(icon: Icons.remove, onTap: onDec),
-          SizedBox(
-            width: 44,
-            child: Text(
-              '${item.qty}',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
+          // Miqdor ustiga bosilsa gramm/dona kiritish oynasi ochiladi
+          // (kilolab sotiladigan mahsulotlar uchun: 400 gr = 0.4).
+          InkWell(
+            onTap: onQtyTap,
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 52,
+              height: 44,
+              child: Center(
+                child: Text(
+                  _fmtQty(item.qty),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
             ),
           ),
           _RoundAction(icon: Icons.add, onTap: onInc),
@@ -148,6 +172,107 @@ class _CartLine extends StatelessWidget {
           _RoundAction(icon: Icons.close, onTap: onRemove, danger: true),
         ],
       ),
+    );
+  }
+}
+
+/// Miqdor kiritish oynasi: raqam yoziladi, keyin "Dona" yoki "Gramm"
+/// bosiladi. Gramm rejimida narx 1 kg uchun deb hisoblanadi:
+/// 400 [Gramm] → miqdor 0.4, summa = narx × 0.4.
+class _QtyDialog extends StatefulWidget {
+  const _QtyDialog({required this.item});
+
+  final CartItem item;
+
+  static Future<num?> show(BuildContext context, CartItem item) =>
+      showDialog<num>(
+        context: context,
+        builder: (context) => _QtyDialog(item: item),
+      );
+
+  @override
+  State<_QtyDialog> createState() => _QtyDialogState();
+}
+
+class _QtyDialogState extends State<_QtyDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  num? _value() {
+    final v = num.tryParse(_controller.text.trim().replaceAll(',', '.'));
+    return (v == null || v <= 0) ? null : v;
+  }
+
+  void _submit({required bool grams}) {
+    final v = _value();
+    if (v == null) return;
+    // Gramm → kg (narx 1 kg uchun kiritilgan bo'ladi).
+    final qty = grams ? v / 1000 : v;
+    Navigator.of(context).pop(qty);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final price = widget.item.price;
+    final v = _value();
+    return AlertDialog(
+      title: Text(widget.item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+            ],
+            style: Theme.of(context).textTheme.headlineSmall,
+            decoration: const InputDecoration(
+              labelText: 'Miqdor',
+              hintText: 'masalan: 400',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          if (v != null)
+            Text(
+              'Gramm bo\'lsa: ${Money.formatSom(price * v / 1000)}   •   '
+              'Dona bo\'lsa: ${Money.formatSom(price * v)}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          const SizedBox(height: 4),
+          Text(
+            'Kilolab sotiladigan mahsulotda narx 1 kg uchun kiritilgan '
+            'bo\'lishi kerak (masalan 85 000 = 1 kg).',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Bekor'),
+        ),
+        OutlinedButton.icon(
+          onPressed: v == null ? null : () => _submit(grams: false),
+          icon: const Icon(Icons.tag),
+          label: const Text('Dona'),
+        ),
+        FilledButton.icon(
+          onPressed: v == null ? null : () => _submit(grams: true),
+          icon: const Icon(Icons.scale),
+          label: const Text('Gramm'),
+        ),
+      ],
     );
   }
 }

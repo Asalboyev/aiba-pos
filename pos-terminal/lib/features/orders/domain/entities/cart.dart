@@ -7,7 +7,9 @@ class CartItem extends Equatable {
   final String? productId;
   final String name;
   final num price;
-  final int qty;
+  /// Miqdor — dona (butun) yoki kg (kasr, masalan 0.4 = 400 gramm).
+  /// Kilolab sotiladigan mahsulotda narx 1 kg uchun kiritiladi.
+  final num qty;
   final String? mxikCode;
   final String? packageCode;
   final num? vatPercent;
@@ -35,7 +37,7 @@ class CartItem extends Equatable {
 
   bool get needsMoreLabels => markingRequired && labels.length < qty;
 
-  CartItem copyWith({int? qty, List<String>? labels}) => CartItem(
+  CartItem copyWith({num? qty, List<String>? labels}) => CartItem(
         productId: productId,
         name: name,
         price: price,
@@ -47,7 +49,7 @@ class CartItem extends Equatable {
         labels: labels ?? this.labels,
       );
 
-  factory CartItem.fromProduct(Product p, {int qty = 1, List<String>? labels}) => CartItem(
+  factory CartItem.fromProduct(Product p, {num qty = 1, List<String>? labels}) => CartItem(
         productId: p.id,
         name: p.name,
         price: p.price,
@@ -84,7 +86,9 @@ class Cart extends Equatable {
     return t < 0 ? 0 : t;
   }
 
-  int get itemCount => items.fold<int>(0, (sum, item) => sum + item.qty);
+  /// Savat sarlavhasidagi hisob: qatorlar soni (kasr miqdorlar bilan
+  /// "1.4 dona" ko'rinishi chalg'itmasin).
+  int get itemCount => items.length;
 
   bool get isEmpty => items.isEmpty;
 
@@ -106,7 +110,7 @@ class Cart extends Equatable {
   }
 
   /// Set the quantity of the line at [index]. Quantities <= 0 remove the line.
-  Cart setQty(int index, int qty) {
+  Cart setQty(int index, num qty) {
     if (index < 0 || index >= items.length) return this;
     final next = [...items];
     if (qty <= 0) {

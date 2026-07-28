@@ -11,7 +11,7 @@ class CartNotifier extends StateNotifier<Cart> {
       state = state.addProduct(product, label: label);
   void increment(int index) => state = state.increment(index);
   void decrement(int index) => state = state.decrement(index);
-  void setQty(int index, int qty) => state = state.setQty(index, qty);
+  void setQty(int index, num qty) => state = state.setQty(index, qty);
   void removeAt(int index) => state = state.removeAt(index);
   void setDiscount(num value) => state = state.setDiscount(value);
   void clear() => state = state.clear();
