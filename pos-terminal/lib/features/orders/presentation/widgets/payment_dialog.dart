@@ -1,15 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/utils/money.dart';
+import '../../../../core/widgets/numeric_keypad.dart';
 import '../../domain/entities/payment_method.dart';
-
-/// True ⇒ tabletda ishlaydi (Android/iOS) — ekran keypadi kerak.
-/// Desktop'da (macOS/Windows/Linux) fizik klaviatura ishlaydi, keypad yashiriladi.
-bool get _isTouchDevice =>
-    defaultTargetPlatform == TargetPlatform.android ||
-    defaultTargetPlatform == TargetPlatform.iOS;
 
 class PaymentChoice {
   final PaymentMethod method;
@@ -38,14 +32,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
   PaymentMethod _method = PaymentMethod.cash;
   late final TextEditingController _amount =
       TextEditingController(text: widget.total.round().toString());
-  // Fokus — tablet'da input bosilsa keypad chiqadi, tashqariga bosilsa yopiladi.
   final FocusNode _amountFocus = FocusNode();
 
-  @override
-  void initState() {
-    super.initState();
-    _amountFocus.addListener(() => setState(() {}));
-  }
+  /// Ekran klaviaturasi ko'rinadimi. Input bosilsa ochiladi (sensorli
+  /// Windows kassada fizik klaviatura yo'q), yashirish tugmasi yopadi.
+  bool _keypadVisible = false;
 
   @override
   void dispose() {
@@ -53,11 +44,6 @@ class _PaymentDialogState extends State<PaymentDialog> {
     _amountFocus.dispose();
     super.dispose();
   }
-
-  /// Keypad qachon ko'rinadi:
-  /// - Faqat mobile/tablet'da (Android/iOS)
-  /// - VA input maydoniga bosilgan bo'lsa
-  bool get _showKeypad => _isTouchDevice && _amountFocus.hasFocus;
 
   num get _amountValue => num.tryParse(_amount.text.trim()) ?? 0;
   num get _change => _amountValue - widget.total;
@@ -85,7 +71,6 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
   void _pressClear() => setState(() => _amount.text = '0');
 
-  void _setAmount(int v) => setState(() => _amount.text = v.toString());
 
   @override
   Widget build(BuildContext context) {
@@ -171,8 +156,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
               TextField(
                 controller: _amount,
                 focusNode: _amountFocus,
-                readOnly: _isTouchDevice,   // fizik klaviatura o'chirilyapki mobile'da
                 showCursor: true,
+                onTap: () => setState(() => _keypadVisible = true),
                 keyboardType: const TextInputType.numberWithOptions(
                   signed: false,
                   decimal: false,
@@ -208,15 +193,15 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ),
                 ),
               ),
-              // Tablet'da — input bosilsa keypad ochiladi, tashqariga bosilsa yopiladi.
-              // Desktop'da bu keypad umuman ko'rinmaydi (fizik klaviatura ishlaydi).
-              if (_showKeypad) ...[
-                const SizedBox(height: 14),
-                _NumericKeypad(
+              // Input bosilsa ekran klaviaturasi ochiladi (sensorli kassa);
+              // yashirish tugmasi bilan yopiladi. Fizik klaviatura ham ishlaydi.
+              if (_keypadVisible) ...[
+                const SizedBox(height: 6),
+                NumericKeypad(
                   onDigit: _pressDigit,
                   onBackspace: _pressBackspace,
                   onClear: _pressClear,
-                  onExact: () => _setAmount(widget.total.round()),
+                  onHide: () => setState(() => _keypadVisible = false),
                 ),
               ],
               if (_method == PaymentMethod.cash && _change > 0)
@@ -300,111 +285,6 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Ekran ichidagi raqam kalitmiza — tablet uchun asosiy kirish usuli.
-/// 3×4 grid: 1 2 3 / 4 5 6 / 7 8 9 / C 0 ⌫. Katta tugmalar barmoq uchun.
-class _NumericKeypad extends StatelessWidget {
-  const _NumericKeypad({
-    required this.onDigit,
-    required this.onBackspace,
-    required this.onClear,
-    required this.onExact,
-  });
-  final void Function(String digit) onDigit;
-  final VoidCallback onBackspace;
-  final VoidCallback onClear;
-  final VoidCallback onExact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _row([_key('1'), _key('2'), _key('3')]),
-        const SizedBox(height: 8),
-        _row([_key('4'), _key('5'), _key('6')]),
-        const SizedBox(height: 8),
-        _row([_key('7'), _key('8'), _key('9')]),
-        const SizedBox(height: 8),
-        _row([
-          _cmdKey('C', onClear, color: Colors.orange),
-          _key('0'),
-          _cmdKey('⌫', onBackspace, color: Colors.red),
-        ]),
-      ],
-    );
-  }
-
-  Widget _row(List<Widget> tiles) => Row(
-        children: [
-          for (var i = 0; i < tiles.length; i++) ...[
-            Expanded(child: tiles[i]),
-            if (i < tiles.length - 1) const SizedBox(width: 8),
-          ],
-        ],
-      );
-
-  Widget _key(String d) => _KeypadTile(label: d, onTap: () => onDigit(d));
-
-  Widget _cmdKey(String label, VoidCallback onTap, {required Color color}) =>
-      _KeypadTile(label: label, onTap: onTap, color: color);
-}
-
-class _KeypadTile extends StatefulWidget {
-  const _KeypadTile({required this.label, required this.onTap, this.color});
-  final String label;
-  final VoidCallback onTap;
-  final Color? color;
-
-  @override
-  State<_KeypadTile> createState() => _KeypadTileState();
-}
-
-class _KeypadTileState extends State<_KeypadTile> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = widget.color ?? theme.colorScheme.primary;
-    return AnimatedScale(
-      duration: const Duration(milliseconds: 90),
-      scale: _pressed ? 0.94 : 1.0,
-      child: Material(
-        color: _pressed ? accent.withValues(alpha: 0.12) : theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: widget.onTap,
-          onTapDown: (_) => setState(() => _pressed = true),
-          onTapUp: (_) => setState(() => _pressed = false),
-          onTapCancel: () => setState(() => _pressed = false),
-          borderRadius: BorderRadius.circular(12),
-          splashColor: accent.withValues(alpha: 0.25),
-          highlightColor: accent.withValues(alpha: 0.1),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 90),
-            height: 54,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _pressed ? accent : theme.dividerColor,
-                width: _pressed ? 1.8 : 1.2,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              widget.label,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: widget.color ?? theme.colorScheme.onSurface,
-              ),
-            ),
           ),
         ),
       ),

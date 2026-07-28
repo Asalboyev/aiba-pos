@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/utils/money.dart';
+import '../../../../core/widgets/numeric_keypad.dart';
 
 /// Miqdor kiritish oynasi — mahsulot birligiga qarab ikki rejim:
 ///   * [weight] = true  (birlik "kg"): gramm kiritiladi, narx 1 kg uchun.
@@ -48,6 +49,10 @@ class QtyDialog extends StatefulWidget {
 class _QtyDialogState extends State<QtyDialog> {
   late final TextEditingController _controller;
 
+  /// Ekran klaviaturasi — sensorli kassada input bosilganda ochiladi,
+  /// tarozi oynasida esa darhol ochiq turadi (kassir tez ishlashi uchun).
+  late bool _keypadVisible = widget.weight;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +83,22 @@ class _QtyDialogState extends State<QtyDialog> {
     Navigator.of(context).pop(widget.weight ? v / 1000 : v);
   }
 
+  void _setGrams(int grams) => setState(() {
+        _controller.text = grams.toString();
+      });
+
+  void _pressDigit(String d) => setState(() {
+        if (_controller.text.length >= 7) return;
+        _controller.text += d;
+      });
+
+  void _pressBackspace() => setState(() {
+        final t = _controller.text;
+        _controller.text = t.isEmpty ? '' : t.substring(0, t.length - 1);
+      });
+
+  void _pressClear() => setState(() => _controller.text = '');
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -87,40 +108,81 @@ class _QtyDialogState extends State<QtyDialog> {
         : (widget.weight ? widget.price * v / 1000 : widget.price * v);
     return AlertDialog(
       title: Text(widget.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: theme.textTheme.headlineSmall,
-            decoration: InputDecoration(
-              labelText: widget.weight ? 'Gramm' : 'Dona',
-              hintText: widget.weight ? 'masalan: 400' : 'masalan: 2',
-              suffixText: widget.weight ? 'gr' : 'dona',
-              border: const OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _submit(),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: theme.textTheme.headlineSmall,
+                decoration: InputDecoration(
+                  labelText: widget.weight ? 'Gramm' : 'Dona',
+                  hintText: widget.weight ? 'masalan: 400' : 'masalan: 2',
+                  suffixText: widget.weight ? 'gr' : 'dona',
+                  border: const OutlineInputBorder(),
+                ),
+                onTap: () => setState(() => _keypadVisible = true),
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _submit(),
+              ),
+              // Tez tanlash: eng ko'p so'raladigan vaznlar bir bosishda.
+              if (widget.weight) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final g in const [100, 500, 1000]) ...[
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => _setGrams(g),
+                          style: OutlinedButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(
+                            g == 1000 ? '1 kg' : '$g gr',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      if (g != 1000) const SizedBox(width: 8),
+                    ],
+                  ],
+                ),
+              ],
+              const SizedBox(height: 10),
+              if (widget.weight)
+                Text(
+                  '1 kg = ${Money.formatSom(widget.price)}',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline),
+                ),
+              if (sum != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Summa: ${Money.formatSom(sum)}',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+              // Ekran klaviaturasi — sensorli kassa uchun.
+              if (_keypadVisible) ...[
+                const SizedBox(height: 8),
+                NumericKeypad(
+                  onDigit: _pressDigit,
+                  onBackspace: _pressBackspace,
+                  onClear: _pressClear,
+                  onHide: () => setState(() => _keypadVisible = false),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: 10),
-          if (widget.weight)
-            Text(
-              '1 kg = ${Money.formatSom(widget.price)}',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
-            ),
-          if (sum != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Summa: ${Money.formatSom(sum)}',
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ],
+        ),
       ),
       actions: [
         TextButton(
