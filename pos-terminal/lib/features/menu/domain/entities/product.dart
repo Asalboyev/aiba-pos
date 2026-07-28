@@ -43,6 +43,14 @@ class Product extends Equatable {
     this.lowStockThreshold = 10,
   });
 
+  /// Kilolab (tarozida) sotiladi — admin panelda "Birlik" maydoniga
+  /// "kg" yozilgan mahsulot. Narx 1 kg uchun kiritiladi; kassada bosilganda
+  /// gramm so'raladi.
+  bool get soldByWeight {
+    final u = unit.trim().toLowerCase();
+    return u == 'kg' || u == 'кг' || u == 'kilogramm' || u == 'килограмм';
+  }
+
   /// Sotib bo'lmaydi (ombor tugagan).
   bool get outOfStock => trackStock && stockQty <= 0;
   /// Kam qoldi (turli chip).

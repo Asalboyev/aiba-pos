@@ -7,8 +7,8 @@ import '../../domain/entities/cart.dart';
 class CartNotifier extends StateNotifier<Cart> {
   CartNotifier() : super(const Cart());
 
-  void addProduct(Product product, {String? label}) =>
-      state = state.addProduct(product, label: label);
+  void addProduct(Product product, {String? label, num qty = 1}) =>
+      state = state.addProduct(product, label: label, qty: qty);
   void increment(int index) => state = state.increment(index);
   void decrement(int index) => state = state.decrement(index);
   void setQty(int index, num qty) => state = state.setQty(index, qty);

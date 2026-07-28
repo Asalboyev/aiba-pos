@@ -7,6 +7,7 @@ import '../../../menu/domain/entities/category.dart';
 import '../../../menu/domain/entities/product.dart';
 import '../../../menu/presentation/providers/menu_providers.dart';
 import '../providers/cart_provider.dart';
+import 'qty_dialog.dart';
 import 'scan_label_dialog.dart';
 
 /// Category tabs + product grid. Tapping a product adds it to the cart.
@@ -94,12 +95,23 @@ Future<void> _addToCart(BuildContext context, CartNotifier cart, Product p) asyn
     label = await ScanLabelDialog.show(context, p.name);
     if (label == null) return; // kassir bekor qildi
   }
-  cart.addProduct(p, label: label);
+  // Kilolab sotiladigan mahsulot (birligi "kg"): bosishi bilan tarozi
+  // oynasi — gramm kiritiladi, savatga kg sifatida tushadi.
+  num qty = 1;
+  if (p.soldByWeight) {
+    if (!context.mounted) return;
+    final kg = await QtyDialog.show(context,
+        name: p.name, price: p.price, weight: true);
+    if (kg == null) return; // bekor qilindi
+    qty = kg;
+  }
+  cart.addProduct(p, label: label, qty: qty);
   if (!context.mounted) return;
+  final qtyText = p.soldByWeight ? ' (${(qty * 1000).round()} gr)' : '';
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
-      content: Text('${p.name} qo\'shildi'),
+      content: Text('${p.name}$qtyText qo\'shildi'),
       duration: const Duration(milliseconds: 600),
     ));
 }

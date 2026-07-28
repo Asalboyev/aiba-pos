@@ -14,6 +14,8 @@ class CartItem extends Equatable {
   final String? packageCode;
   final num? vatPercent;
   final bool markingRequired;
+  /// Kilolab sotiladigan mahsulot (birligi "kg") — qty kg'da, narx 1 kg uchun.
+  final bool soldByWeight;
   /// Har dona uchun bitta DataMatrix (qty ga teng bo'lishi kerak).
   /// Har chek qatori 1 birlik sifatida E-POS'ga jo'natilgani sabab, hozircha
   /// birinchi label ishlatiladi; kelajakda qty > 1 bo'lsa har dona uchun
@@ -29,6 +31,7 @@ class CartItem extends Equatable {
     this.packageCode,
     this.vatPercent,
     this.markingRequired = false,
+    this.soldByWeight = false,
     this.labels = const [],
   });
 
@@ -46,6 +49,7 @@ class CartItem extends Equatable {
         packageCode: packageCode,
         vatPercent: vatPercent,
         markingRequired: markingRequired,
+        soldByWeight: soldByWeight,
         labels: labels ?? this.labels,
       );
 
@@ -58,13 +62,14 @@ class CartItem extends Equatable {
         packageCode: p.packageCode,
         vatPercent: p.vatPercent,
         markingRequired: p.markingRequired,
+        soldByWeight: p.soldByWeight,
         labels: labels ?? const [],
       );
 
   @override
   List<Object?> get props => [
         productId, name, price, qty, mxikCode, packageCode,
-        vatPercent, markingRequired, labels,
+        vatPercent, markingRequired, soldByWeight, labels,
       ];
 }
 
@@ -95,19 +100,22 @@ class Cart extends Equatable {
   /// Add a product, merging quantity if a line for the same product exists.
   /// [label] — DataMatrix code (markirovka mahsulotlar uchun). Har chaqirishda
   /// yangi label ro'yxatga qo'shiladi (har dona uchun bittadan bo'lishi kerak).
-  Cart addProduct(Product product, {String? label}) {
+  Cart addProduct(Product product, {String? label, num qty = 1}) {
     final idx = items.indexWhere((i) => i.productId == product.id);
     final next = [...items];
     if (idx >= 0) {
       final cur = next[idx];
       final newLabels = label != null ? [...cur.labels, label] : cur.labels;
-      next[idx] = cur.copyWith(qty: cur.qty + 1, labels: newLabels);
+      next[idx] = cur.copyWith(qty: _round3(cur.qty + qty), labels: newLabels);
     } else {
       final labels = label != null ? [label] : const <String>[];
-      next.add(CartItem.fromProduct(product, labels: labels));
+      next.add(CartItem.fromProduct(product, qty: _round3(qty), labels: labels));
     }
     return copyWith(items: next);
   }
+
+  /// Kasr miqdorlarda suzuvchi nuqta chiqindisini yo'qotish (0.30000000004).
+  static num _round3(num v) => (v * 1000).round() / 1000;
 
   /// Set the quantity of the line at [index]. Quantities <= 0 remove the line.
   Cart setQty(int index, num qty) {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/utils/money.dart';
 import '../../domain/entities/cart.dart';
 import '../providers/cart_provider.dart';
+import 'qty_dialog.dart';
 
 /// The right-hand cart panel: line items with qty controls, discount, total.
 class CartPanel extends ConsumerWidget {
@@ -50,17 +51,32 @@ class CartPanel extends ConsumerWidget {
                     itemCount: cart.items.length,
                     separatorBuilder: (context, index) =>
                         const Divider(height: 1),
-                    itemBuilder: (context, i) => _CartLine(
-                      item: cart.items[i],
-                      onInc: () => notifier.increment(i),
-                      onDec: () => notifier.decrement(i),
-                      onRemove: () => notifier.removeAt(i),
-                      onQtyTap: () async {
-                        final qty = await _QtyDialog.show(
-                            context, cart.items[i]);
-                        if (qty != null) notifier.setQty(i, qty);
-                      },
-                    ),
+                    itemBuilder: (context, i) {
+                      final item = cart.items[i];
+                      // Kg mahsulotda +/- 100 grammlik qadam bilan yuradi,
+                      // dona mahsulotda odatdagidek 1 dona.
+                      num step(num q, int dir) => item.soldByWeight
+                          ? ((q * 1000).round() + dir * 100) / 1000
+                          : q + dir;
+                      return _CartLine(
+                        item: item,
+                        onInc: () =>
+                            notifier.setQty(i, step(item.qty, 1)),
+                        onDec: () =>
+                            notifier.setQty(i, step(item.qty, -1)),
+                        onRemove: () => notifier.removeAt(i),
+                        onQtyTap: () async {
+                          final qty = await QtyDialog.show(
+                            context,
+                            name: item.name,
+                            price: item.price,
+                            weight: item.soldByWeight,
+                            current: item.qty,
+                          );
+                          if (qty != null) notifier.setQty(i, qty);
+                        },
+                      );
+                    },
                   ),
           ),
           const Divider(height: 1),
@@ -149,19 +165,23 @@ class _CartLine extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _RoundAction(icon: Icons.remove, onTap: onDec),
-          // Miqdor ustiga bosilsa gramm/dona kiritish oynasi ochiladi
-          // (kilolab sotiladigan mahsulotlar uchun: 400 gr = 0.4).
+          // Miqdor ustiga bosilsa kiritish oynasi: kg mahsulotda gramm,
+          // dona mahsulotda butun son.
           InkWell(
             onTap: onQtyTap,
             borderRadius: BorderRadius.circular(8),
             child: SizedBox(
-              width: 52,
+              width: item.soldByWeight ? 72 : 52,
               height: 44,
               child: Center(
                 child: Text(
-                  _fmtQty(item.qty),
+                  item.soldByWeight
+                      ? '${_fmtQty(item.qty)} kg'
+                      : _fmtQty(item.qty),
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.titleLarge
+                  style: (item.soldByWeight
+                          ? theme.textTheme.titleMedium
+                          : theme.textTheme.titleLarge)
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -176,106 +196,6 @@ class _CartLine extends StatelessWidget {
   }
 }
 
-/// Miqdor kiritish oynasi: raqam yoziladi, keyin "Dona" yoki "Gramm"
-/// bosiladi. Gramm rejimida narx 1 kg uchun deb hisoblanadi:
-/// 400 [Gramm] → miqdor 0.4, summa = narx × 0.4.
-class _QtyDialog extends StatefulWidget {
-  const _QtyDialog({required this.item});
-
-  final CartItem item;
-
-  static Future<num?> show(BuildContext context, CartItem item) =>
-      showDialog<num>(
-        context: context,
-        builder: (context) => _QtyDialog(item: item),
-      );
-
-  @override
-  State<_QtyDialog> createState() => _QtyDialogState();
-}
-
-class _QtyDialogState extends State<_QtyDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  num? _value() {
-    final v = num.tryParse(_controller.text.trim().replaceAll(',', '.'));
-    return (v == null || v <= 0) ? null : v;
-  }
-
-  void _submit({required bool grams}) {
-    final v = _value();
-    if (v == null) return;
-    // Gramm → kg (narx 1 kg uchun kiritilgan bo'ladi).
-    final qty = grams ? v / 1000 : v;
-    Navigator.of(context).pop(qty);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final price = widget.item.price;
-    final v = _value();
-    return AlertDialog(
-      title: Text(widget.item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-            ],
-            style: Theme.of(context).textTheme.headlineSmall,
-            decoration: const InputDecoration(
-              labelText: 'Miqdor',
-              hintText: 'masalan: 400',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 8),
-          if (v != null)
-            Text(
-              'Gramm bo\'lsa: ${Money.formatSom(price * v / 1000)}   •   '
-              'Dona bo\'lsa: ${Money.formatSom(price * v)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          const SizedBox(height: 4),
-          Text(
-            'Kilolab sotiladigan mahsulotda narx 1 kg uchun kiritilgan '
-            'bo\'lishi kerak (masalan 85 000 = 1 kg).',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Bekor'),
-        ),
-        OutlinedButton.icon(
-          onPressed: v == null ? null : () => _submit(grams: false),
-          icon: const Icon(Icons.tag),
-          label: const Text('Dona'),
-        ),
-        FilledButton.icon(
-          onPressed: v == null ? null : () => _submit(grams: true),
-          icon: const Icon(Icons.scale),
-          label: const Text('Gramm'),
-        ),
-      ],
-    );
-  }
-}
 
 /// Large round tap target for the cart's most-used controls. POS terminals
 /// are operated quickly (often on touch screens), so these stay ≥48px.
