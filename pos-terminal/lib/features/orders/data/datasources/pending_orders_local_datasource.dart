@@ -82,6 +82,17 @@ class PendingOrdersLocalDataSource {
     );
   }
 
+  /// Payload'ni qayta yozish — oflayn fiskal natijasi (`offline_fiscal`)
+  /// qo'shilganda, sync push serverga o'sha natija bilan yetib borishi uchun.
+  Future<void> updatePayload({
+    required String clientUuid,
+    required Map<String, dynamic> payload,
+  }) async {
+    await (_db.update(_db.pendingOrders)
+          ..where((t) => t.clientUuid.equals(clientUuid)))
+        .write(PendingOrdersCompanion(payloadJson: Value(jsonEncode(payload))));
+  }
+
   /// Update only the fiscal fields (e.g. after an online checkout response).
   Future<void> updateFiscal({
     required String clientUuid,

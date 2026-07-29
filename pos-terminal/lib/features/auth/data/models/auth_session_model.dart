@@ -24,6 +24,7 @@ class AuthSessionModel {
         receiptPaperWidth: (r['receipt_paper_width'] is int)
             ? r['receipt_paper_width'] as int
             : int.tryParse('${r['receipt_paper_width'] ?? 80}') ?? 80,
+        fiscalProvider: r['fiscal_provider']?.toString(),
       ),
       terminal: TerminalInfo(
         id: (t['id'] ?? '').toString(),

@@ -15,6 +15,10 @@ class RestaurantInfo extends Equatable {
   final bool receiptShowQr;
   final bool receiptShowMxik;
   final int receiptPaperWidth; // 58 yoki 80 (mm)
+  /// Restoran fiskal rejimi (mock / epos / epos_terminal). epos_terminal
+  /// bo'lsa internet uzilganda chek lokal Communicator orqali fiskalizatsiya
+  /// qilinadi (oflayn fiskal).
+  final String? fiscalProvider;
 
   const RestaurantInfo({
     required this.id,
@@ -30,7 +34,11 @@ class RestaurantInfo extends Equatable {
     this.receiptShowQr = true,
     this.receiptShowMxik = true,
     this.receiptPaperWidth = 80,
+    this.fiscalProvider,
   });
+
+  /// Oflayn fiskalga ruxsat: chek kassadagi Communicator orqali yuboriladi.
+  bool get fiscalViaTerminal => fiscalProvider == 'epos_terminal';
 
   @override
   List<Object?> get props => [
@@ -47,6 +55,7 @@ class RestaurantInfo extends Equatable {
         receiptShowQr,
         receiptShowMxik,
         receiptPaperWidth,
+        fiscalProvider,
       ];
 }
 
