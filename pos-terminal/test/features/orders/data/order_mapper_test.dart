@@ -62,6 +62,18 @@ void main() {
       expect((payments[0] as Map)['method'], 'card');
       expect((payments[1] as Map)['method'], 'qr');
       expect((payments[0] as Map)['amount'], 30000);
+      // Har qism serverga label bilan ketadi (chekda ko'rinadigan nom).
+      expect((payments[0] as Map)['label'], 'Karta');
+      expect((payments[1] as Map)['label'], 'QR');
+    });
+
+    test('custom payment label overrides method label', () {
+      final json = OrderMapper.draftToOrderIn(makeDraft(
+        payments: const [Payment(PaymentMethod.card, 50000, label: 'Payme')],
+      ));
+      final p = (json['payments'] as List).first as Map;
+      expect(p['method'], 'card'); // wire kodi karta
+      expect(p['label'], 'Payme'); // ko'rinadigan nom
     });
 
     test('omits null/empty optional fields', () {

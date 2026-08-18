@@ -7,7 +7,6 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../printing/domain/receipt_data.dart';
 import '../../../printing/presentation/printing_providers.dart';
 import '../../domain/entities/order_draft.dart';
-import '../../domain/entities/payment_method.dart';
 import '../providers/cart_provider.dart';
 import '../providers/orders_providers.dart';
 import '../providers/sync_service.dart';
@@ -23,8 +22,8 @@ class PosSaleScreen extends ConsumerWidget {
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) return;
 
-    final choice = await PaymentDialog.show(context, cart.total);
-    if (choice == null || !context.mounted) return;
+    final payments = await PaymentDialog.show(context, cart.total);
+    if (payments == null || payments.isEmpty || !context.mounted) return;
 
     // Daily order number is generated locally so the printed receipt always
     // carries one — even when the sale is queued offline.
@@ -36,7 +35,10 @@ class PosSaleScreen extends ConsumerWidget {
       number: orderNumber,
       items: cart.items,
       discount: cart.discount,
-      payments: [Payment(choice.method, choice.amount)],
+      payments: payments,
+      // Joriy ochiq smena — serverdagi eskirgan JWT shift_id'ga ishonmasdan,
+      // sotuvni aynan shu smenaga bog'laymiz (smena yopib-ochilgan bo'lsa ham).
+      shiftId: ref.read(sessionProvider)?.shiftId,
     );
 
     // 1) Save locally + attempt immediate sync.

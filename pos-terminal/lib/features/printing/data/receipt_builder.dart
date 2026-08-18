@@ -206,7 +206,7 @@ class ReceiptBuilder {
 
     // ── To'lovlar ─────────────────────────────────────────────────────────────
     for (final p in data.payments) {
-      bytes.addAll(g.text(_pair(p.method.label, Money.format(p.amount), cols),
+      bytes.addAll(g.text(_pair(p.label, Money.format(p.amount), cols),
           styles: _normal));
     }
 

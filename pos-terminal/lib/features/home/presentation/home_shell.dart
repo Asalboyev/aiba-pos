@@ -7,6 +7,7 @@ import '../../orders/presentation/providers/sync_service.dart';
 import '../../orders/presentation/screens/pos_sale_screen.dart';
 import '../../reports/presentation/screens/today_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
+import '../../shift/presentation/providers/shift_providers.dart';
 import '../../shift/presentation/screens/shift_screen.dart';
 
 /// Top-level navigation shell shown after login. A NavigationRail on wide
@@ -30,6 +31,50 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(syncServiceProvider.notifier).syncAll();
     });
+  }
+
+  /// Chiqishdan oldin smena ochiq bo'lsa ogohlantiramiz — kassir smenani
+  /// yopishni (Z-hisobot) unutmasin. Ma'lumot yo'qolmaydi, lekin ochiq smena
+  /// yopilmay qolishi mumkin.
+  Future<void> _logout() async {
+    final session = ref.read(sessionProvider);
+    // Ochiq smena bormi: sessiyada shift_id yoki serverdagi joriy ochiq smena.
+    final hasOpenShift = session?.shiftId != null ||
+        ref.read(currentShiftProvider).valueOrNull != null;
+
+    if (hasOpenShift) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (dctx) => AlertDialog(
+          title: const Text('Smena hali ochiq'),
+          content: const Text(
+            'Smena yopilmagan (Z-hisobot chiqmagan). Baribir chiqasizmi?\n\n'
+            'Ma\'lumot yo\'qolmaydi — qayta kirsangiz smena davom etadi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dctx).pop('cancel'),
+              child: const Text('Bekor'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dctx).pop('shift'),
+              child: const Text('Smenani yopish'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dctx).pop('logout'),
+              child: const Text('Baribir chiqish'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || action == null || action == 'cancel') return;
+      if (action == 'shift') {
+        // Smena tabiga o'tkazamiz — kassir Z-hisobotni yopsin.
+        setState(() => _index = 1);
+        return;
+      }
+    }
+    await ref.read(sessionProvider.notifier).logout();
   }
 
   Widget _body() {
@@ -94,7 +139,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'logout') {
-                ref.read(sessionProvider.notifier).logout();
+                _logout();
               }
             },
             itemBuilder: (_) => [

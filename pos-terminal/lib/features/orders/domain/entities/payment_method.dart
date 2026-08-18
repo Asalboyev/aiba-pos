@@ -22,12 +22,22 @@ enum PaymentMethod {
 class Payment {
   final PaymentMethod method;
   final num amount;
-  const Payment(this.method, this.amount);
 
-  Map<String, dynamic> toJson() => {'method': method.code, 'amount': amount};
+  /// Chekda/UI'da ko'rinadigan nom. Berilmasa `method.label` ishlatiladi.
+  /// Kelajakdagi usullar (Payme, Click) uchun ko'rinadigan nomni method
+  /// kodidan ajratib turadi.
+  final String? _label;
+
+  const Payment(this.method, this.amount, {String? label}) : _label = label;
+
+  String get label => _label ?? method.label;
+
+  Map<String, dynamic> toJson() =>
+      {'method': method.code, 'amount': amount, 'label': label};
 
   factory Payment.fromJson(Map<String, dynamic> j) => Payment(
         PaymentMethod.fromCode((j['method'] ?? 'cash').toString()),
         num.tryParse('${j['amount']}') ?? 0,
+        label: j['label']?.toString(),
       );
 }

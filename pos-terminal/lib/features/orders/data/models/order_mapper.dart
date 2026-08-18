@@ -17,6 +17,7 @@ class OrderMapper {
       if (draft.tableNo != null && draft.tableNo!.isNotEmpty)
         'table_no': draft.tableNo,
       if (draft.note != null && draft.note!.isNotEmpty) 'note': draft.note,
+      if (draft.shiftId != null && draft.shiftId!.isNotEmpty) 'shift_id': draft.shiftId,
       'discount': draft.discount,
       'items': [
         for (final item in draft.items)
@@ -36,7 +37,7 @@ class OrderMapper {
       ],
       'payments': [
         for (final p in draft.payments)
-          {'method': p.method.code, 'amount': p.amount},
+          {'method': p.method.code, 'amount': p.amount, 'label': p.label},
       ],
     };
   }

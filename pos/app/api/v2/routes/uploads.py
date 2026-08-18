@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -12,7 +13,7 @@ router = APIRouter(tags=["uploads"])
 
 # Rasm fayllar shu papkaga yoziladi. Static fayl serve `/static/uploads/*`
 # orqali chiqadi (main.py'da mount qilinadi).
-UPLOAD_ROOT = Path("/app/app/static/uploads")
+UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", "/app/app/static/uploads"))
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB

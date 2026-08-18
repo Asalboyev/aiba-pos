@@ -17,6 +17,11 @@ class OrderDraft extends Equatable {
   /// checkout so the receipt always has one, online or offline.
   final String? number;
 
+  /// Joriy ochiq smena id'si. Serverga har buyurtma bilan yuboriladi, shunda
+  /// smena JWT'da eskirgan bo'lsa ham (yopib-qayta ochilgan bo'lsa) sotuv
+  /// to'g'ri smenaga bog'lanadi. Sessiyadagi ochiq smenadan olinadi.
+  final String? shiftId;
+
   const OrderDraft({
     required this.clientUuid,
     required this.items,
@@ -25,6 +30,7 @@ class OrderDraft extends Equatable {
     this.tableNo,
     this.note,
     this.number,
+    this.shiftId,
   });
 
   num get subtotal => items.fold<num>(0, (s, i) => s + i.lineTotal);
@@ -35,5 +41,5 @@ class OrderDraft extends Equatable {
 
   @override
   List<Object?> get props =>
-      [clientUuid, items, discount, payments, tableNo, note, number];
+      [clientUuid, items, discount, payments, tableNo, note, number, shiftId];
 }

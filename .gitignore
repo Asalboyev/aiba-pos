@@ -50,3 +50,10 @@ pos/data/
 
 # === IDE / editor ===
 *.log
+
+# === Secrets (never commit) ===
+.env
+pos/.env
+*.env
+!.env.example
+!*/.env.example
