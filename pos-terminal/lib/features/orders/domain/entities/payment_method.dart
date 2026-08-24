@@ -2,7 +2,10 @@
 enum PaymentMethod {
   cash('cash', 'Naqd'),
   card('card', 'Karta'),
-  qr('qr', 'QR');
+  qr('qr', 'QR'),
+  // VIP mehmon (katta akalar pul to'lamaydi) — manager Telegram kodi bilan
+  // tasdiqlanib, chek "keldi-ketdi" deb yopiladi (pul to'langanday).
+  keldiKetdi('keldi_ketdi', 'Keldi-ketdi');
 
   const PaymentMethod(this.code, this.label);
 

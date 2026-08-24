@@ -13,6 +13,9 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
+  # Vektor logolar (login glass logo + app-icon) — Figma SVG export.
+  flutter_svg: ^2.0.10
+
   # State management (flutter-craft convention)
   flutter_riverpod: ^2.6.1
 
@@ -67,3 +70,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/
+    - assets/icons/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Variable.ttf

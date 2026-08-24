@@ -58,6 +58,24 @@ class PrinterService {
     );
   }
 
+  /// QR to'lov talonini bosадi (fiskal emas) — WLCM checkout QR'i.
+  Future<PrintReport> printQrSlip({
+    required String url,
+    required num amount,
+    int paperWidth = 80,
+  }) async {
+    final bytes = await ReceiptBuilder.buildQrSlip(
+        url: url, amount: amount, paperWidth: paperWidth);
+    if (_config.printerUsb) return _sendLocal(bytes);
+    final host = _config.printerHost;
+    if (host != null && host.isNotEmpty) return _sendNetwork(host, bytes);
+    if (Platform.isWindows || Platform.isMacOS) return _sendLocal(bytes);
+    return const PrintReport(
+      PrintOutcome.noPrinter,
+      'Printer sozlanmagan — QR faqat ekranda',
+    );
+  }
+
   /// Prints a short hardware test ticket through the configured transport.
   Future<PrintReport> printTest() async {
     final bytes = await ReceiptBuilder.buildTest(paperWidth: 80);

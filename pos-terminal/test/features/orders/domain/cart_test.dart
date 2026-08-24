@@ -28,7 +28,9 @@ void main() {
       expect(cart.items.length, 1);
       expect(cart.items.first.qty, 2);
       expect(cart.subtotal, 50000);
-      expect(cart.itemCount, 2);
+      // itemCount — QATORLAR soni (qty yig'indisi emas): tarozili mahsulotда
+      // qty kasrli bo'ladi (1.5 kg), "1.5 ta mahsulot" xunuk chiqadi.
+      expect(cart.itemCount, 1);
     });
 
     test('subtotal sums line totals across products', () {
@@ -37,7 +39,7 @@ void main() {
           .addProduct(cola) // 8000
           .addProduct(cola); // +8000
       expect(cart.subtotal, 25000 + 8000 + 8000);
-      expect(cart.itemCount, 3);
+      expect(cart.itemCount, 2); // 2 qator: burger + cola(qty 2)
     });
 
     test('increment and decrement adjust quantity', () {

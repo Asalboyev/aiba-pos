@@ -17,8 +17,8 @@ class MenuLocalDataSource {
           ]))
         .get();
     return rows
-        .map((r) =>
-            domain.Category(id: r.id, name: r.name, sortOrder: r.sortOrder))
+        .map((r) => domain.Category(
+            id: r.id, name: r.name, sortOrder: r.sortOrder, imageUrl: r.imageUrl))
         .toList();
   }
 
@@ -64,6 +64,7 @@ class MenuLocalDataSource {
               id: c.id,
               name: c.name,
               sortOrder: Value(c.sortOrder),
+              imageUrl: Value(c.imageUrl),
             ),
           ),
         );

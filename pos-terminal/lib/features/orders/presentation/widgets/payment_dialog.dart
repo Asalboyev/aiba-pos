@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/utils/money.dart';
-import '../../../../core/widgets/numeric_keypad.dart';
+import '../../../../core/widgets/pos_chrome.dart';
 import '../../domain/entities/payment_method.dart';
 
-/// Bitta chekni bir yoki bir nechta to'lov usuli bilan yopish oynasi.
+/// Chekni bir yoki bir nechta usul bilan yopish oynasi (Figma dark UI).
 ///
-/// Oddiy holat: usul tanlab darrov «To'lash» — bitta to'lov qaytadi.
-/// Bo'lib to'lash: kiritilgan summa qolgan summadan kam bo'lsa «Bo'lib to'lash»
-/// tugmasi orqali qism ro'yxatga tushadi, usul avtomatik keyingi bo'sh usulga
-/// o'tadi. Har usul bir chekda faqat bir marta. Yakuniy tugma qolgan summani
-/// tanlangan usul bilan yopadi. Natija — [Payment] ro'yxati.
+/// Boshlang'ich: "{usul} orqali to'lov" — usul tanlash yo'q (savatdan bosilgan
+/// usul), faqat "Olingan summa" + [To'lash] + [Bo'lib to'lash].
+/// "Bo'lib to'lash" bosilса — kiritilgan summa qism sifatida qo'shiladi va
+/// oyna "Bo'lib to'lash: {qoldi}" holatiga o'tadi: qolgan usullar tanlanadi,
+/// [Ortga qaytish] + [To'lash].
 class PaymentDialog extends StatefulWidget {
-  const PaymentDialog({super.key, required this.total});
+  const PaymentDialog({super.key, required this.total, this.initialMethod});
   final num total;
+  final PaymentMethod? initialMethod;
 
-  static Future<List<Payment>?> show(BuildContext context, num total) {
+  static Future<List<Payment>?> show(BuildContext context, num total,
+      {PaymentMethod? initialMethod}) {
     return showDialog<List<Payment>>(
       context: context,
-      builder: (_) => PaymentDialog(total: total),
+      builder: (_) => PaymentDialog(total: total, initialMethod: initialMethod),
     );
   }
 
@@ -27,527 +30,474 @@ class PaymentDialog extends StatefulWidget {
   State<PaymentDialog> createState() => _PaymentDialogState();
 }
 
-class _PaymentDialogState extends State<PaymentDialog> {
-  /// Qo'shilgan qismlar (bo'lib to'lashda).
-  final List<Payment> _parts = [];
+/// Bo'lib to'lashda tanlanadigan real usullar (keldi-ketdi bu yerda emas —
+/// u VIP comp, alohida oqim).
+const _splitMethods = [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.qr];
 
-  PaymentMethod _method = PaymentMethod.cash;
+class _PaymentDialogState extends State<PaymentDialog> {
+  final List<Payment> _parts = [];
+  late PaymentMethod _method = widget.initialMethod ?? PaymentMethod.cash;
   late final TextEditingController _amount =
       TextEditingController(text: widget.total.round().toString());
-  final FocusNode _amountFocus = FocusNode();
 
-  bool _keypadVisible = false;
+  @override
+  void initState() {
+    super.initState();
+    // Har bir bosilgan raqamda qaytim va tugmalar holati qayta hisoblanadi.
+    _amount.addListener(_onAmountChanged);
+  }
+
+  void _onAmountChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
+    _amount.removeListener(_onAmountChanged);
     _amount.dispose();
-    _amountFocus.dispose();
     super.dispose();
   }
 
-  // --- Hisob-kitob ---
   num get _paid => _parts.fold<num>(0, (s, p) => s + p.amount);
   num get _remaining => widget.total - _paid;
   num get _amountValue => num.tryParse(_amount.text.trim()) ?? 0;
-
-  /// Qaytim faqat naqdda va faqat qolgan summaga nisbatan.
-  num get _change =>
-      _method == PaymentMethod.cash ? _amountValue - _remaining : 0;
-
+  /// Kassir ortiq summa kiritsa — qaytim. To'lov usuli muhim emas: kassir
+  /// mijozga qancha qaytarishini darhol ko'rishi kerak.
+  num get _change => _amountValue - _remaining;
   bool _used(PaymentMethod m) => _parts.any((p) => p.method == m);
+  bool get _inSplit => _parts.isNotEmpty;
 
-  /// Yana bo'lib bo'ladimi — oxirgi bo'sh usul to'liq qolganini yopishi kerak,
-  /// shuning uchun qismlar soni (usullar − 1) dan kam bo'lsagina.
-  bool get _canSplitMore => _parts.length < PaymentMethod.values.length - 1;
+  void _setAmountToRemaining() => _amount.text = _remaining.round().toString();
 
-  PaymentMethod? get _nextFree {
-    for (final m in PaymentMethod.values) {
-      if (!_used(m)) return m;
-    }
-    return null;
-  }
+  void _selectMethod(PaymentMethod m) => setState(() {
+        _method = m;
+        _setAmountToRemaining();
+      });
 
-  void _setAmountToRemaining() =>
-      _amount.text = _remaining.round().toString();
-
-  void _selectMethod(PaymentMethod m) {
-    if (_used(m)) return; // ishlatilgan usul bosilmaydi
+  void _addPart() {
+    final amount = _amountValue;
+    if (amount <= 0 || amount >= _remaining) return;
     setState(() {
-      _method = m;
+      _parts.add(Payment(_method, amount, label: _method.label));
+      // Keyingi bo'sh usulga o'tamiz.
+      for (final m in _splitMethods) {
+        if (!_used(m)) {
+          _method = m;
+          break;
+        }
+      }
       _setAmountToRemaining();
     });
   }
 
-  /// Kiritilgan summani qism sifatida ro'yxatga qo'shadi.
-  void _addPart() {
-    final amount = _amountValue;
-    if (amount <= 0 || amount >= _remaining || !_canSplitMore || _used(_method)) {
+  void _back() {
+    if (_parts.isEmpty) {
+      Navigator.of(context).pop();
       return;
     }
     setState(() {
-      _parts.add(Payment(_method, amount, label: _method.label));
-      // Usul avtomatik keyingi bo'sh usulga o'tadi, summa qolganiga to'ladi.
-      _method = _nextFree ?? _method;
-      _setAmountToRemaining();
-    });
-  }
-
-  void _removePart(int index) {
-    setState(() {
-      final removed = _parts.removeAt(index);
-      // O'chirilgan usul yana ochiladi — uni joriy usul qilib qo'yamiz.
+      final removed = _parts.removeLast();
       _method = removed.method;
       _setAmountToRemaining();
     });
   }
 
-  /// Yakuniy: qolgan summani joriy usul bilan yopadi va ro'yxatni qaytaradi.
   void _finish() {
-    final payments = [
-      ..._parts,
-      Payment(_method, _remaining, label: _method.label),
-    ];
-    Navigator.of(context).pop(payments);
+    Navigator.of(context)
+        .pop([..._parts, Payment(_method, _remaining, label: _method.label)]);
   }
 
-  // --- Keypad handlers ---
-  void _pressDigit(String d) {
-    setState(() {
-      final cur = _amount.text;
-      if (cur == '0') {
-        _amount.text = d;
-      } else {
-        if (cur.length >= 10) return;
-        _amount.text = cur + d;
-      }
-    });
-  }
-
-  void _pressBackspace() {
-    setState(() {
-      final cur = _amount.text;
-      _amount.text = cur.length <= 1 ? '0' : cur.substring(0, cur.length - 1);
-    });
-  }
-
-  void _pressClear() => setState(() => _amount.text = '0');
+  String _assetFor(PaymentMethod m) => switch (m) {
+        PaymentMethod.cash => 'assets/icons/pay_cash.svg',
+        PaymentMethod.card => 'assets/icons/pay_card.svg',
+        PaymentMethod.qr => 'assets/icons/pay_qr_fill.svg',
+        PaymentMethod.keldiKetdi => 'assets/icons/pay_users.svg',
+      };
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final screenH = MediaQuery.of(context).size.height;
-    final hasParts = _parts.isNotEmpty;
-    // Bo'lib to'lash tugmasi: summa qolganidan kam, musbat va yana bo'lish mumkin.
-    final canAddPart = _amountValue > 0 && _amountValue < _remaining && _canSplitMore;
-    // Yakuniy tugma: joriy usul bo'sh va summa qolganini qoplaydi.
-    final canFinish = _remaining > 0 && !_used(_method) && _amountValue >= _remaining;
+    final canFinish = _remaining > 0 && _amountValue >= _remaining;
+    final canAddPart = _amountValue > 0 && _amountValue < _remaining;
+    final avail = _splitMethods.where((m) => !_used(m)).toList();
+
+    final title = _inSplit
+        ? "Bo'lib to'lash: ${Money.formatSom(_remaining)}"
+        : "${_method.label} orqali to'lov";
 
     return Dialog(
+      backgroundColor: const Color(0xFF1C1D22),
       insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 560, maxHeight: screenH - 60),
+      // Mishkasiz: Enter — To'lash, Esc — bekor (summa maydoni fokusni
+      // yo'qotsa ham ishlaydi).
+      child: Focus(
+        onKeyEvent: (node, e) {
+          if (e is! KeyDownEvent) return KeyEventResult.ignored;
+          if (e.logicalKey == LogicalKeyboardKey.escape) {
+            Navigator.of(context).pop();
+            return KeyEventResult.handled;
+          }
+          // F4 — karta, F5 — naqd, F3 — QR: to'lov usulini almashtirish
+          // (savdo ekranidagi klavishalar bilan bir xil).
+          PaymentMethod? pick;
+          if (e.logicalKey == LogicalKeyboardKey.f5) pick = PaymentMethod.cash;
+          if (e.logicalKey == LogicalKeyboardKey.f4) pick = PaymentMethod.card;
+          if (e.logicalKey == LogicalKeyboardKey.f3) pick = PaymentMethod.qr;
+          if (pick != null && !_used(pick)) {
+            setState(() => _method = pick!);
+            return KeyEventResult.handled;
+          }
+          if (e.logicalKey == LogicalKeyboardKey.enter ||
+              e.logicalKey == LogicalKeyboardKey.numpadEnter) {
+            if (canFinish) {
+              _finish();
+            } else if (canAddPart) {
+              _addPart();
+            }
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 540, maxHeight: screenH - 60),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'To\'lov',
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 20),
-              // Jami summa.
+              Row(children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                      color: PosColors.iconChip,
+                      borderRadius: BorderRadius.circular(11)),
+                  child: Center(
+                    child: _inSplit
+                        ? const Icon(Icons.swap_horiz, color: Colors.white, size: 20)
+                        : SvgPicture.asset(_assetFor(_method),
+                            width: 20,
+                            height: 20,
+                            colorFilter: const ColorFilter.mode(
+                                Colors.white, BlendMode.srcIn)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ]),
+              const SizedBox(height: 18),
+              // Jami (+ Qoldi split holatida).
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                  color: const Color(0x1F2FBF71),
                   borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0x332FBF71)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Jami:',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
+                child: Column(children: [
+                  _amountRow('Jami:', widget.total, PosColors.green),
+                  if (_inSplit) ...[
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Divider(height: 1, color: Color(0x332FBF71)),
                     ),
-                    Text(
-                      Money.formatSom(widget.total),
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
+                    _amountRow('Qoldi:', _remaining, const Color(0xFFF5A623)),
                   ],
-                ),
+                ]),
               ),
-
-              // Qo'shilgan qismlar + qolgan summa (bo'lib to'lash holati).
-              if (hasParts) ...[
+              // Qo'shilgan qismlar.
+              if (_inSplit) ...[
                 const SizedBox(height: 12),
                 for (var i = 0; i < _parts.length; i++)
                   _PartRow(
+                    iconAsset: _assetFor(_parts[i].method),
                     label: _parts[i].label,
                     amount: _parts[i].amount,
-                    onRemove: () => _removePart(i),
+                    onRemove: () => setState(() {
+                      final r = _parts.removeAt(i);
+                      _method = r.method;
+                      _setAmountToRemaining();
+                    }),
                   ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Qoldi:',
-                        style: TextStyle(
-                          color: Colors.orange.shade900,
-                          fontWeight: FontWeight.w600,
+                const SizedBox(height: 6),
+                // Qolган summani qaysi usul bilan yopish.
+                Row(
+                  children: [
+                    for (var i = 0; i < avail.length; i++) ...[
+                      Expanded(
+                        child: _MethodTile(
+                          iconAsset: _assetFor(avail[i]),
+                          label: avail[i].label,
+                          selected: _method == avail[i],
+                          onTap: () => _selectMethod(avail[i]),
                         ),
                       ),
-                      Text(
-                        Money.formatSom(_remaining),
-                        style: TextStyle(
-                          color: Colors.orange.shade900,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
+                      if (i < avail.length - 1) const SizedBox(width: 10),
                     ],
-                  ),
+                  ],
                 ),
               ],
-
-              const SizedBox(height: 22),
-              // Usul tugmalari — ishlatilgani xira/bosilmaydigan.
-              Row(
-                children: [
-                  Expanded(child: _PaymentMethodTile(
-                    icon: Icons.payments,
-                    label: 'Naqd',
-                    selected: _method == PaymentMethod.cash,
-                    disabled: _used(PaymentMethod.cash),
-                    onTap: () => _selectMethod(PaymentMethod.cash),
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(child: _PaymentMethodTile(
-                    icon: Icons.credit_card,
-                    label: 'Karta',
-                    selected: _method == PaymentMethod.card,
-                    disabled: _used(PaymentMethod.card),
-                    onTap: () => _selectMethod(PaymentMethod.card),
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(child: _PaymentMethodTile(
-                    icon: Icons.qr_code,
-                    label: 'QR',
-                    selected: _method == PaymentMethod.qr,
-                    disabled: _used(PaymentMethod.qr),
-                    onTap: () => _selectMethod(PaymentMethod.qr),
-                  )),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // "Olingan summa".
+              const SizedBox(height: 18),
+              const Text('Olingan summa',
+                  style: TextStyle(color: PosColors.label, fontSize: 13)),
+              const SizedBox(height: 8),
               TextField(
                 controller: _amount,
-                focusNode: _amountFocus,
-                showCursor: true,
-                onTap: () => setState(() => _keypadVisible = true),
-                keyboardType: const TextInputType.numberWithOptions(
-                  signed: false,
-                  decimal: false,
-                ),
+                // Fizik klaviatura: darhol terish mumkin, Enter → To'lash.
+                autofocus: true,
+                onSubmitted: (_) {
+                  if (_remaining > 0 && _amountValue >= _remaining) {
+                    _finish();
+                  } else if (_amountValue > 0 && _amountValue < _remaining) {
+                    _addPart();
+                  }
+                },
+                keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                ),
+                    color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
                 textAlign: TextAlign.end,
-                onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  labelText: 'Olingan summa',
-                  labelStyle: const TextStyle(fontSize: 14),
-                  border: OutlineInputBorder(
+                  isDense: true,
+                  filled: true,
+                  fillColor: PosColors.field,
+                  suffixText: "so'm",
+                  suffixStyle: const TextStyle(color: PosColors.muted, fontSize: 15),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: PosColors.cardBorder),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: theme.colorScheme.primary,
-                      width: 2,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  suffixText: "so'm",
-                  suffixStyle: TextStyle(
-                    fontSize: 15,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    borderSide: const BorderSide(color: PosColors.blue, width: 1.5),
                   ),
                 ),
               ),
-              if (_keypadVisible) ...[
-                const SizedBox(height: 6),
-                NumericKeypad(
-                  onDigit: _pressDigit,
-                  onBackspace: _pressBackspace,
-                  onClear: _pressClear,
-                  onHide: () => setState(() => _keypadVisible = false),
-                ),
-              ],
-
-              // Bo'lib to'lash tugmasi — summa qolganidan kam bo'lsa.
-              if (canAddPart) ...[
+              if (_change > 0) ...[
                 const SizedBox(height: 12),
-                SizedBox(
-                  height: 48,
-                  child: OutlinedButton.icon(
-                    onPressed: _addPart,
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: const Icon(Icons.add),
-                    label: Text(
-                      'Bo\'lib to\'lash: ${Money.formatSom(_amountValue)} ${_method.label} qo\'shish',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1F2FBF71),
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const Text('Qaytim = ',
+                        style: TextStyle(color: PosColors.green, fontWeight: FontWeight.w700, fontSize: 16)),
+                    Text(Money.formatSom(_change),
+                        style: const TextStyle(
+                            color: PosColors.green, fontWeight: FontWeight.w800, fontSize: 18)),
+                  ]),
                 ),
               ],
-
-              // Qaytim — faqat naqdda, qolgan summaga nisbatan.
-              if (_method == PaymentMethod.cash && _change > 0)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Qaytim:',
-                          style: TextStyle(
-                            color: Colors.green.shade800,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          Money.formatSom(_change),
-                          style: TextStyle(
-                            color: Colors.green.shade800,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
+              const SizedBox(height: 18),
+              if (_inSplit)
+                Row(children: [
                   Expanded(
-                    child: SizedBox(
-                      height: 52,
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          'Bekor',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
+                    child: _Btn(
+                      label: 'Ortga qaytish',
+                      icon: Icons.arrow_back,
+                      filled: false,
+                      onTap: _back,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 2,
-                    child: SizedBox(
-                      height: 52,
-                      child: FilledButton.icon(
-                        onPressed: canFinish ? _finish : null,
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.check_circle_outline),
-                        label: Text(
-                          "To'lash (${Money.formatSom(_remaining)} ${_method.label})",
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+                    child: _Btn(
+                      label: 'To\'lash',
+                      icon: Icons.check,
+                      filled: true,
+                      onTap: canFinish ? _finish : null,
                     ),
                   ),
-                ],
+                ])
+              else ...[
+                _Btn(
+                  label: "To'lash",
+                  icon: Icons.check,
+                  filled: true,
+                  onTap: canFinish ? _finish : null,
+                ),
+                const SizedBox(height: 10),
+                _Btn(
+                  label: canAddPart
+                      ? "Bo'lib to'lash: ${Money.formatSom(_amountValue)}"
+                          " · qoldi ${Money.formatSom(_remaining - _amountValue)}"
+                      : "Bo'lib to'lash — summani jamidan kam qilib tering",
+                  icon: Icons.swap_horiz,
+                  filled: false,
+                  onTap: canAddPart ? _addPart : null,
+                ),
+              ],
+              const SizedBox(height: 10),
+              const Center(
+                child: Text(
+                  'Summani tering · Enter — To\'lash · F5 naqd · F4 karta · '
+                  'F3 QR · Esc — bekor',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Color(0xFF5C626A), fontSize: 11.5),
+                ),
               ),
             ],
           ),
         ),
       ),
+    ),
     );
   }
+
+  Widget _amountRow(String label, num amount, Color color) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w700)),
+          Text(Money.formatSom(amount),
+              style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.w800)),
+        ],
+      );
 }
 
-/// Qo'shilgan qism qatori — «Karta 10 000» + ✕ o'chirish.
 class _PartRow extends StatelessWidget {
-  const _PartRow({required this.label, required this.amount, required this.onRemove});
+  const _PartRow(
+      {required this.iconAsset,
+      required this.label,
+      required this.amount,
+      required this.onRemove});
+  final String iconAsset;
   final String label;
   final num amount;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(10),
+          color: PosColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: PosColors.cardBorder),
         ),
-        child: Row(
-          children: [
-            Icon(Icons.check_circle, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(width: 10),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-            const Spacer(),
-            Text(
-              Money.formatSom(amount),
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-            ),
-            IconButton(
-              onPressed: onRemove,
-              icon: const Icon(Icons.close),
-              iconSize: 18,
-              visualDensity: VisualDensity.compact,
-              tooltip: 'O\'chirish',
-            ),
-          ],
-        ),
+        child: Row(children: [
+          SvgPicture.asset(iconAsset,
+              width: 20,
+              height: 20,
+              colorFilter:
+                  const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+          const SizedBox(width: 10),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+          const Spacer(),
+          Text(Money.formatSom(amount),
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, color: PosColors.muted),
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+          ),
+        ]),
       ),
     );
   }
 }
 
-/// Payment method tanlash kartochkasi — Naqd/Karta/QR uchun mos.
-/// selected=true bo'lganda yashil to'ldirilgan; disabled=true bo'lganda xira va
-/// bosilmaydi (usul shu chekda ishlatilgan).
-class _PaymentMethodTile extends StatefulWidget {
-  const _PaymentMethodTile({
-    required this.icon,
+class _MethodTile extends StatelessWidget {
+  const _MethodTile({
+    required this.iconAsset,
     required this.label,
     required this.selected,
     required this.onTap,
-    this.disabled = false,
   });
-  final IconData icon;
+  final String iconAsset;
   final String label;
   final bool selected;
-  final bool disabled;
   final VoidCallback onTap;
 
   @override
-  State<_PaymentMethodTile> createState() => _PaymentMethodTileState();
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 56,
+        decoration: BoxDecoration(
+          color: selected ? PosColors.blue : PosColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? PosColors.blue : PosColors.cardBorder),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          SvgPicture.asset(iconAsset,
+              width: 20,
+              height: 20,
+              colorFilter:
+                  const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+          const SizedBox(width: 8),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+        ]),
+      ),
+    );
+  }
 }
 
-class _PaymentMethodTileState extends State<_PaymentMethodTile> {
-  bool _pressed = false;
+class _Btn extends StatelessWidget {
+  const _Btn(
+      {required this.label,
+      required this.icon,
+      required this.filled,
+      required this.onTap});
+  final String label;
+  final IconData icon;
+  final bool filled;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bg = widget.selected
-        ? theme.colorScheme.primary
-        : theme.colorScheme.surface;
-    final fg = widget.selected
-        ? Colors.white
-        : theme.colorScheme.onSurface.withValues(alpha: 0.85);
-    final borderColor = widget.selected
-        ? theme.colorScheme.primary
-        : theme.dividerColor;
-
-    final tile = AnimatedScale(
-      duration: const Duration(milliseconds: 90),
-      scale: _pressed ? 0.96 : 1.0,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        child: Material(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-          elevation: widget.selected ? 2 : 0,
-          shadowColor: theme.colorScheme.primary.withValues(alpha: 0.3),
-          child: InkWell(
-            onTap: widget.disabled ? null : widget.onTap,
-            onTapDown: widget.disabled ? null : (_) => setState(() => _pressed = true),
-            onTapUp: widget.disabled ? null : (_) => setState(() => _pressed = false),
-            onTapCancel: () => setState(() => _pressed = false),
+    final enabled = onTap != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 54,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: filled ? PosColors.blue : PosColors.card,
             borderRadius: BorderRadius.circular(12),
-            hoverColor: widget.selected
-                ? Colors.white.withValues(alpha: 0.08)
-                : theme.colorScheme.primary.withValues(alpha: 0.06),
-            splashColor: widget.selected
-                ? Colors.white.withValues(alpha: 0.2)
-                : theme.colorScheme.primary.withValues(alpha: 0.18),
-            highlightColor: widget.selected
-                ? Colors.white.withValues(alpha: 0.08)
-                : theme.colorScheme.primary.withValues(alpha: 0.08),
-            child: Container(
-              height: 56,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderColor, width: 1.5),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(widget.icon, color: fg, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    widget.label,
-                    style: TextStyle(
-                      color: fg,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            border: Border.all(color: filled ? PosColors.blue : PosColors.cardBorder),
           ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+          ]),
         ),
       ),
     );
-
-    // Ishlatilgan usul — xira va bosilmaydi.
-    return widget.disabled
-        ? Opacity(opacity: 0.4, child: IgnorePointer(child: tile))
-        : tile;
   }
 }

@@ -88,6 +88,8 @@ class SyncService extends StateNotifier<SyncState> {
       _ref.invalidate(recentOrdersProvider);
       _ref.invalidate(unsyncedCountProvider);
       _ref.invalidate(salesSummaryProvider);
+      _ref.invalidate(topProductsProvider);
+      _ref.invalidate(failedOrdersProvider);
       state = state.copyWith(
         syncing: false,
         lastSyncAt: DateTime.now(),

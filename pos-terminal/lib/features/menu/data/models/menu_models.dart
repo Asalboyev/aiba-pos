@@ -9,6 +9,7 @@ class CategoryModel {
         sortOrder: (j['sort_order'] is num)
             ? (j['sort_order'] as num).toInt()
             : int.tryParse('${j['sort_order']}') ?? 0,
+        imageUrl: j['image_url']?.toString(),
       );
 }
 

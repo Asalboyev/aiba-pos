@@ -27,6 +27,9 @@ class ShiftRemoteDataSource {
       ordersCount: (j['orders_count'] is num)
           ? (j['orders_count'] as num).toInt()
           : int.tryParse('${j['orders_count']}') ?? 0,
+      errorChecksCount: (j['error_checks_count'] is num)
+          ? (j['error_checks_count'] as num).toInt()
+          : int.tryParse('${j['error_checks_count']}') ?? 0,
     );
   }
 
