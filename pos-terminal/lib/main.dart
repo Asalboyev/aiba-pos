@@ -7,6 +7,13 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/providers/auth_providers.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/home/presentation/home_shell.dart';
+import 'features/settings/presentation/settings_screen.dart';
+
+// Faqat ishlab chiqish/vizual tekshiruv uchun: login'ni chetlab o'tib to'g'ridan
+// -to'g'ri qobiqni ko'rsatadi (--dart-define=DEBUG_HOME=true). Prod build'da
+// o'chirilgan (default false).
+const _kDebugHome = bool.fromEnvironment('DEBUG_HOME');
+const _kDebugIndex = int.fromEnvironment('DEBUG_INDEX');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,7 +46,11 @@ class _AibaPosAppState extends ConsumerState<AibaPosApp> {
     // Restore a persisted session so the POS opens straight into the shell
     // (and works offline) after the first login.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await ref.read(sessionProvider.notifier).restore();
+      // Debug-home vizual tekshiruvda secure_storage (keychain) o'qishni
+      // o'tkazib yuboramiz — aks holda macOS keychain oynasi appni to'sadi.
+      if (!_kDebugHome) {
+        await ref.read(sessionProvider.notifier).restore();
+      }
       if (mounted) setState(() => _restored = true);
     });
   }
@@ -47,6 +58,10 @@ class _AibaPosAppState extends ConsumerState<AibaPosApp> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
+    // Sozlamalar saqlanganда qayta baholaymiz (setup → login).
+    ref.watch(configVersionProvider);
+    final configured =
+        ref.read(appConfigProvider).terminalCode.trim().isNotEmpty;
 
     // Token expired on the server (401) — drop the cached session so the app
     // routes back to the login screen instead of queueing forever "offline".
@@ -66,14 +81,22 @@ class _AibaPosAppState extends ConsumerState<AibaPosApp> {
       title: 'AIBA POS',
       scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
+      // POS terminal har doim Figma qorong'i mavzusida (qurilma temasiga
+      // bog'liq emas) — barcha ekranlar bir xil ko'rinadi.
+      theme: AppTheme.dark(),
       darkTheme: AppTheme.dark(),
-      // POS terminal har doim yorug' rejimda — kassir muhitida o'qilishi
-      // oson va qurilma/tizim temasiga bog'liq bo'lmaydi.
-      themeMode: ThemeMode.light,
-      home: !_restored
-          ? const _Splash()
-          : (session == null ? const LoginScreen() : const HomeShell()),
+      themeMode: ThemeMode.dark,
+      home: _kDebugHome
+          ? HomeShell(initialIndex: _kDebugIndex)
+          : (!_restored
+              ? const _Splash()
+              : session != null
+                  ? const HomeShell()
+                  // Birinchi o'rnatiш: terminal sozlanmaган bo'lса — setup
+                  // (Sozlamalar). Save'дан keyin login'ga o'tadi.
+                  : (configured
+                      ? const LoginScreen()
+                      : const SettingsScreen())),
     );
   }
 }
@@ -84,7 +107,15 @@ class _Splash extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+      backgroundColor: Color(0xFF06090B),
+      body: Center(
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: CircularProgressIndicator(
+              strokeWidth: 3, color: Color(0xFF2277EA)),
+        ),
+      ),
     );
   }
 }

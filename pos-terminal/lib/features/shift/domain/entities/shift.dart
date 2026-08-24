@@ -10,6 +10,7 @@ class Shift extends Equatable {
   final num totalCard;
   final num totalSales;
   final int ordersCount;
+  final int errorChecksCount;
 
   const Shift({
     required this.id,
@@ -21,6 +22,7 @@ class Shift extends Equatable {
     this.totalCard = 0,
     this.totalSales = 0,
     this.ordersCount = 0,
+    this.errorChecksCount = 0,
   });
 
   bool get isOpen => status == 'open';
@@ -36,5 +38,6 @@ class Shift extends Equatable {
         totalCard,
         totalSales,
         ordersCount,
+        errorChecksCount,
       ];
 }

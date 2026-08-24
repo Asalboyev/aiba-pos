@@ -7,6 +7,8 @@ class CartItem extends Equatable {
   final String? productId;
   final String name;
   final num price;
+  /// Mahsulot rasmi (savat qatorida ko'rsatiladi). Nisbiy yoki to'liq URL.
+  final String? imageUrl;
   /// Miqdor — dona (butun) yoki kg (kasr, masalan 0.4 = 400 gramm).
   /// Kilolab sotiladigan mahsulotda narx 1 kg uchun kiritiladi.
   final num qty;
@@ -27,6 +29,7 @@ class CartItem extends Equatable {
     required this.name,
     required this.price,
     required this.qty,
+    this.imageUrl,
     this.mxikCode,
     this.packageCode,
     this.vatPercent,
@@ -45,6 +48,7 @@ class CartItem extends Equatable {
         name: name,
         price: price,
         qty: qty ?? this.qty,
+        imageUrl: imageUrl,
         mxikCode: mxikCode,
         packageCode: packageCode,
         vatPercent: vatPercent,
@@ -58,6 +62,7 @@ class CartItem extends Equatable {
         name: p.name,
         price: p.price,
         qty: qty,
+        imageUrl: p.imageUrl,
         mxikCode: p.mxikCode,
         packageCode: p.packageCode,
         vatPercent: p.vatPercent,
@@ -68,7 +73,7 @@ class CartItem extends Equatable {
 
   @override
   List<Object?> get props => [
-        productId, name, price, qty, mxikCode, packageCode,
+        productId, name, price, qty, imageUrl, mxikCode, packageCode,
         vatPercent, markingRequired, soldByWeight, labels,
       ];
 }

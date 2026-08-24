@@ -12,6 +12,7 @@ class CachedCategories extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  TextColumn get imageUrl => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -82,7 +83,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.connection);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -97,6 +98,10 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(cachedProducts, cachedProducts.trackStock);
             await m.addColumn(cachedProducts, cachedProducts.stockQty);
             await m.addColumn(cachedProducts, cachedProducts.lowStockThreshold);
+          }
+          if (from < 4) {
+            // v4 → kategoriya rasmi (admin panelda o'rnatiladi)
+            await m.addColumn(cachedCategories, cachedCategories.imageUrl);
           }
         },
       );

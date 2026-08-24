@@ -20,6 +20,7 @@ class AppConfig {
   static const _kCommunicatorUrl = 'communicator_url';
   static const _kOrderSeqDate = 'order_seq_date';
   static const _kOrderSeq = 'order_seq';
+  static const _kSetupDone = 'setup_done';
   static const _kToken = 'access_token';
 
   // AIBA Nex backend — the terminal API lives under /api/v2/pos-terminal/*
@@ -37,6 +38,13 @@ class AppConfig {
   String get terminalCode => _prefs.getString(_kTerminalCode) ?? '';
   Future<void> setTerminalCode(String value) =>
       _prefs.setString(_kTerminalCode, value.trim());
+
+  /// Terminal bir marta muvaffaqiyatli kirgan — sozlash tugagan.
+  /// Shundan keyin login ekranidagi yashirin "000" kodi ISHLAMAYDI: sozlamalar
+  /// faqat birinchi o'rnatishda bir marta kiritiladi. Kirish muvaffaqiyatsiz
+  /// bo'lsa bayroq qo'yilmaydi — noto'g'ri sozlamani tuzatish mumkin.
+  bool get setupDone => _prefs.getBool(_kSetupDone) ?? false;
+  Future<void> markSetupDone() => _prefs.setBool(_kSetupDone, true);
 
   String? get printerHost {
     final v = _prefs.getString(_kPrinterHost);

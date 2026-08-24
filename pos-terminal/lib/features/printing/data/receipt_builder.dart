@@ -114,6 +114,52 @@ class ReceiptBuilder {
 
     bytes.addAll(g.reset());
 
+    // ── TO'LOV KODI cheki (1-chek) ────────────────────────────────────────────
+    // Mijoz skanerlab to'laydigan chek. Fiskal EMAS — to'lov o'tgach ikkinchi,
+    // fiskal chek chiqadi.
+    final payQr = data.paymentQrUrl;
+    final isPaySlip = payQr != null && payQr.isNotEmpty;
+    if (isPaySlip) {
+      bytes.addAll(g.text('=' * cols, styles: _normal));
+      bytes.addAll(g.text('TO\'LOV UCHUN', styles: _title));
+      bytes.addAll(g.text('FISKAL CHEK EMAS', styles: _centerBold));
+      bytes.addAll(g.text('=' * cols, styles: _normal));
+      bytes.addAll(g.feed(1));
+    }
+
+    // ── XATO CHEK banneri ─────────────────────────────────────────────────────
+    // Chek xato deb belgilangan bo'lsa — eng boshida katta yozuv: chekni
+    // ko'rgan odam (tekshiruvchi/buxgalter) darhol farqlaydi.
+    if (data.isErrorCheck) {
+      final no = (data.orderNumber ?? '').replaceAll('#', '');
+      bytes.addAll(g.text('*' * cols, styles: _normal));
+      bytes.addAll(g.text('XATO CHEK', styles: _title));
+      if (no.isNotEmpty) {
+        bytes.addAll(g.text('CHEK RAQAMI: $no', styles: _centerBold));
+      }
+      if ((data.errorReason ?? '').isNotEmpty) {
+        bytes.addAll(g.text('Sabab: ${data.errorReason}', styles: _center));
+      }
+      bytes.addAll(g.text('BU CHEK HISOBGA OLINMAYDI', styles: _centerBold));
+      bytes.addAll(g.text('*' * cols, styles: _normal));
+      bytes.addAll(g.feed(1));
+    } else if ((data.replacesErrorNumber ?? '').isNotEmpty) {
+      // To'g'irlangan chek. Raqam xato chek bilan BIR XIL bo'lsa (odatiy
+      // holat) — shunchaki "TO'G'IRLANGAN CHEK"; boshqa raqam bo'lsa
+      // qaysi chek o'rniga ekani ham yoziladi.
+      final same = (data.replacesErrorNumber ?? '') ==
+          (data.orderNumber ?? '').replaceAll('#', '');
+      bytes.addAll(g.text('=' * cols, styles: _normal));
+      bytes.addAll(g.text('TO\'G\'IRLANGAN CHEK', styles: _title));
+      bytes.addAll(g.text(
+          same
+              ? 'Oldingi urinish XATO — shu chek to\'g\'ri'
+              : 'XATO CHEK № ${data.replacesErrorNumber} o\'rniga',
+          styles: _centerBold));
+      bytes.addAll(g.text('=' * cols, styles: _normal));
+      bytes.addAll(g.feed(1));
+    }
+
     // ── Sarlavha ──────────────────────────────────────────────────────────────
     if (data.logoBytes != null && data.logoBytes!.isNotEmpty) {
       try {
@@ -215,6 +261,26 @@ class ReceiptBuilder {
           styles: _small));
     }
 
+    // ── TO'LOV KODI QR (1-chek) — mijoz shu QR'ni skanerlab to'laydi ─────────
+    if (isPaySlip) {
+      bytes.addAll(g.feed(1));
+      bytes.addAll(g.text('TO\'LOV KODI', styles: _title));
+      bytes.addAll(g.qrcode(payQr,
+          size: data.paperWidth == 58 ? QRSize.Size6 : QRSize.Size7));
+      bytes.addAll(g.feed(1));
+      bytes.addAll(g.text('Payme / Click / Uzum bilan skanerlab to\'lang',
+          styles: _center));
+      bytes.addAll(g.text('To\'lovdan so\'ng fiskal chek avtomatik chiqadi',
+          styles: _small));
+      if ((data.footer ?? '').isNotEmpty) {
+        bytes.addAll(g.feed(1));
+        bytes.addAll(g.text(data.footer!, styles: _center));
+      }
+      bytes.addAll(g.feed(2));
+      bytes.addAll(g.cut());
+      return bytes;
+    }
+
     // ── Soliq QR ──────────────────────────────────────────────────────────────
     final qr = data.fiscal?.qrUrl;
     if (data.showQr && qr != null && qr.isNotEmpty) {
@@ -246,6 +312,34 @@ class ReceiptBuilder {
   ///
   /// Ikkala kenglik uchun "o'lchagich" chiziq bosadi: qaysi chiziq qog'ozga
   /// aniq sig'sa — adminkada o'sha kenglikni tanlash kerak (58 yoki 80).
+  /// QR to'lov taloni (fiskal EMAS): mijoz skanerlashi uchun WLCM checkout QR.
+  static Future<List<int>> buildQrSlip({
+    required String url,
+    required num amount,
+    int paperWidth = 80,
+  }) async {
+    final profile = await CapabilityProfile.load();
+    final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
+    final g = Generator(paperSize, profile);
+    final bytes = <int>[];
+    bytes.addAll(g.reset());
+    bytes.addAll(g.text('QR ORQALI TO\'LOV', styles: _title));
+    bytes.addAll(g.text(_formatDate(DateTime.now()), styles: _center));
+    bytes.addAll(g.text('-' * _cols(paperWidth), styles: _normal));
+    bytes.addAll(g.text('Summa: ${Money.formatSom(amount)}', styles: _big));
+    bytes.addAll(g.feed(1));
+    bytes.addAll(g.qrcode(url,
+        size: paperWidth == 58 ? QRSize.Size6 : QRSize.Size7));
+    bytes.addAll(g.feed(1));
+    bytes.addAll(g.text('Payme / Click / Uzum bilan skanerlab to\'lang',
+        styles: _center));
+    bytes.addAll(g.text('To\'lovdan so\'ng chek avtomatik chiqadi',
+        styles: _small));
+    bytes.addAll(g.feed(2));
+    bytes.addAll(g.cut());
+    return bytes;
+  }
+
   static Future<List<int>> buildTest({int paperWidth = 80}) async {
     final profile = await CapabilityProfile.load();
     final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;

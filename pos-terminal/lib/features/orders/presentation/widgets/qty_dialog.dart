@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/utils/money.dart';
-import '../../../../core/widgets/numeric_keypad.dart';
+import '../../../../core/widgets/pos_chrome.dart';
 
-/// Miqdor kiritish oynasi — mahsulot birligiga qarab ikki rejim:
-///   * [weight] = true  (birlik "kg"): gramm kiritiladi, narx 1 kg uchun.
-///     400 → 0.4 kg qaytadi, summa oldindan ko'rinadi.
-///   * [weight] = false (dona): faqat butun son kiritiladi.
+/// Miqdor kiritish oynasi (dark UI) — birlikka qarab ikki rejim:
+///   * [weight] = true  (kg): gramm kiritiladi, narx 1 kg uchun. 400 → 0.4 kg.
+///   * [weight] = false (dona): butun son.
 class QtyDialog extends StatefulWidget {
   const QtyDialog({
     super.key,
@@ -20,11 +19,8 @@ class QtyDialog extends StatefulWidget {
   final String name;
   final num price;
   final bool weight;
-
-  /// Joriy miqdor (savatdagi qatorni tahrirlashda oldindan to'ldiriladi).
   final num? current;
 
-  /// Qaytadi: kg rejimda kg (0.4), dona rejimda butun son. Bekor — null.
   static Future<num?> show(
     BuildContext context, {
     required String name,
@@ -47,33 +43,29 @@ class QtyDialog extends StatefulWidget {
 }
 
 class _QtyDialogState extends State<QtyDialog> {
-  late final TextEditingController _controller;
-
-  /// Ekran klaviaturasi — sensorli kassada input bosilganda ochiladi,
-  /// tarozi oynasida esa darhol ochiq turadi (kassir tez ishlashi uchun).
-  late bool _keypadVisible = widget.weight;
+  // Fizik klaviatura: miqdor to'g'ridan-to'g'ri teriladi, Enter — tasdiqlash.
+  late final TextEditingController _c = TextEditingController();
+  String get _text => _c.text;
 
   @override
   void initState() {
     super.initState();
-    var initial = '';
     final cur = widget.current;
     if (cur != null && cur > 0) {
-      initial = widget.weight
-          ? (cur * 1000).round().toString() // kg → gramm
+      _c.text = widget.weight
+          ? (cur * 1000).round().toString()
           : cur.round().toString();
     }
-    _controller = TextEditingController(text: initial);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _c.dispose();
     super.dispose();
   }
 
   int? _raw() {
-    final v = int.tryParse(_controller.text.trim());
+    final v = int.tryParse(_text.trim());
     return (v == null || v <= 0) ? null : v;
   }
 
@@ -83,118 +75,231 @@ class _QtyDialogState extends State<QtyDialog> {
     Navigator.of(context).pop(widget.weight ? v / 1000 : v);
   }
 
-  void _setGrams(int grams) => setState(() {
-        _controller.text = grams.toString();
-      });
-
-  void _pressDigit(String d) => setState(() {
-        if (_controller.text.length >= 7) return;
-        _controller.text += d;
-      });
-
-  void _pressBackspace() => setState(() {
-        final t = _controller.text;
-        _controller.text = t.isEmpty ? '' : t.substring(0, t.length - 1);
-      });
-
-  void _pressClear() => setState(() => _controller.text = '');
+  void _setGrams(int grams) => setState(() => _c.text = grams.toString());
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final v = _raw();
     final sum = v == null
         ? null
         : (widget.weight ? widget.price * v / 1000 : widget.price * v);
-    return AlertDialog(
-      title: Text(widget.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      content: SizedBox(
-        width: 360,
+
+    return Dialog(
+      backgroundColor: const Color(0xFF1C1D22),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Focus(
+        onKeyEvent: (n, e) {
+          if (e is KeyDownEvent &&
+              e.logicalKey == LogicalKeyboardKey.escape) {
+            Navigator.of(context).pop();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child:  ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
         child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Row(children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                      color: PosColors.iconChip,
+                      borderRadius: BorderRadius.circular(11)),
+                  child: Icon(widget.weight ? Icons.scale : Icons.tag,
+                      color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(widget.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ]),
+              const SizedBox(height: 18),
+              Text(widget.weight ? 'Miqdorni kiriting' : 'Dona',
+                  style: const TextStyle(color: PosColors.label, fontSize: 13)),
+              const SizedBox(height: 8),
+              // Fizik klaviatura: autofocus, Enter — tasdiqlash.
               TextField(
-                controller: _controller,
+                controller: _c,
                 autofocus: true,
                 keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                style: theme.textTheme.headlineSmall,
-                decoration: InputDecoration(
-                  labelText: widget.weight ? 'Gramm' : 'Dona',
-                  hintText: widget.weight ? 'masalan: 400' : 'masalan: 2',
-                  suffixText: widget.weight ? 'gr' : 'dona',
-                  border: const OutlineInputBorder(),
-                ),
-                onTap: () => setState(() => _keypadVisible = true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(7),
+                ],
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _submit(),
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800),
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: true,
+                  fillColor: PosColors.field,
+                  suffixText: widget.weight ? 'g' : 'dona',
+                  suffixStyle:
+                      const TextStyle(color: PosColors.muted, fontSize: 15),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: PosColors.cardBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: PosColors.blue, width: 1.5),
+                  ),
+                ),
               ),
-              // Tez tanlash: eng ko'p so'raladigan vaznlar bir bosishda.
               if (widget.weight) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    for (final g in const [100, 500, 1000]) ...[
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _setGrams(g),
-                          style: OutlinedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                          child: Text(
-                            g == 1000 ? '1 kg' : '$g gr',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  for (final g in const [100, 500, 1000]) ...[
+                    Expanded(
+                      child: _QuickBtn(
+                        label: g == 1000 ? '1 kg' : '$g gr',
+                        onTap: () => _setGrams(g),
                       ),
-                      if (g != 1000) const SizedBox(width: 8),
-                    ],
+                    ),
+                    if (g != 1000) const SizedBox(width: 10),
                   ],
+                ]),
+                const SizedBox(height: 12),
+                Center(
+                  child: Text('1 kg = ${Money.formatSom(widget.price)}',
+                      style: const TextStyle(color: PosColors.muted, fontSize: 14)),
                 ),
               ],
-              const SizedBox(height: 10),
-              if (widget.weight)
-                Text(
-                  '1 kg = ${Money.formatSom(widget.price)}',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
-                ),
               if (sum != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Summa: ${Money.formatSom(sum)}',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1F2FBF71),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0x332FBF71)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Summa :',
+                          style: TextStyle(
+                              color: PosColors.green,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700)),
+                      Text(Money.formatSom(sum),
+                          style: const TextStyle(
+                              color: PosColors.green,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800)),
+                    ],
+                  ),
                 ),
               ],
-              // Ekran klaviaturasi — sensorli kassa uchun.
-              if (_keypadVisible) ...[
-                const SizedBox(height: 8),
-                NumericKeypad(
-                  onDigit: _pressDigit,
-                  onBackspace: _pressBackspace,
-                  onClear: _pressClear,
-                  onHide: () => setState(() => _keypadVisible = false),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(
+                  child: _DialogBtn(
+                    label: 'Bekor',
+                    filled: false,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
                 ),
-              ],
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: _DialogBtn(
+                    label: 'Tasdiqlash',
+                    icon: Icons.check,
+                    filled: true,
+                    onTap: v == null ? null : _submit,
+                  ),
+                ),
+              ]),
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Bekor'),
+    ),
+    );
+  }
+}
+
+class _QuickBtn extends StatelessWidget {
+  const _QuickBtn({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: PosColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: PosColors.cardBorder),
         ),
-        FilledButton.icon(
-          onPressed: v == null ? null : _submit,
-          icon: Icon(widget.weight ? Icons.scale : Icons.check),
-          label: const Text('OK'),
+        child: Text(label,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+}
+
+class _DialogBtn extends StatelessWidget {
+  const _DialogBtn(
+      {required this.label, required this.filled, required this.onTap, this.icon});
+  final String label;
+  final bool filled;
+  final VoidCallback? onTap;
+  final IconData? icon;
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 52,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: filled ? PosColors.blue : PosColors.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: filled ? PosColors.blue : PosColors.cardBorder),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            if (icon != null) ...[
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+            ],
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+          ]),
         ),
-      ],
+      ),
     );
   }
 }

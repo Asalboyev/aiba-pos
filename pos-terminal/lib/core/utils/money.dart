@@ -34,4 +34,29 @@ class Money {
 
   /// Format with the so'm suffix, e.g. "1 250 000 so'm".
   static String formatSom(num value) => "${format(value)} so'm";
+
+  /// Qisqartma pul formati (Figma mini-kartalari): 500 → "500",
+  /// 500 000 → "500 K", 1 150 000 → "1.15 mln".
+  static String compact(num value) {
+    final v = value.abs();
+    String s;
+    if (v >= 1000000) {
+      s = (v / 1000000).toStringAsFixed(2);
+      s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+      s = '$s mln';
+    } else if (v >= 1000) {
+      s = '${(v / 1000).round()} K';
+    } else {
+      s = v.round().toString();
+    }
+    return value < 0 ? '-$s' : s;
+  }
+
+  /// Miqdor formati — butun bo'lsa kasrsiz, aks holda 3 xonagacha (trim).
+  static String formatQty(num value) {
+    if (value % 1 == 0) return value.toInt().toString();
+    var s = value.toStringAsFixed(3);
+    s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    return s;
+  }
 }

@@ -39,8 +39,19 @@ class $CachedCategoriesTable extends CachedCategories
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _imageUrlMeta = const VerificationMeta(
+    'imageUrl',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, name, sortOrder];
+  late final GeneratedColumn<String> imageUrl = GeneratedColumn<String>(
+    'image_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, sortOrder, imageUrl];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -72,6 +83,12 @@ class $CachedCategoriesTable extends CachedCategories
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('image_url')) {
+      context.handle(
+        _imageUrlMeta,
+        imageUrl.isAcceptableOrUnknown(data['image_url']!, _imageUrlMeta),
+      );
+    }
     return context;
   }
 
@@ -93,6 +110,10 @@ class $CachedCategoriesTable extends CachedCategories
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      imageUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}image_url'],
+      ),
     );
   }
 
@@ -106,10 +127,12 @@ class CachedCategory extends DataClass implements Insertable<CachedCategory> {
   final String id;
   final String name;
   final int sortOrder;
+  final String? imageUrl;
   const CachedCategory({
     required this.id,
     required this.name,
     required this.sortOrder,
+    this.imageUrl,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -117,6 +140,9 @@ class CachedCategory extends DataClass implements Insertable<CachedCategory> {
     map['id'] = Variable<String>(id);
     map['name'] = Variable<String>(name);
     map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || imageUrl != null) {
+      map['image_url'] = Variable<String>(imageUrl);
+    }
     return map;
   }
 
@@ -125,6 +151,9 @@ class CachedCategory extends DataClass implements Insertable<CachedCategory> {
       id: Value(id),
       name: Value(name),
       sortOrder: Value(sortOrder),
+      imageUrl: imageUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(imageUrl),
     );
   }
 
@@ -137,6 +166,7 @@ class CachedCategory extends DataClass implements Insertable<CachedCategory> {
       id: serializer.fromJson<String>(json['id']),
       name: serializer.fromJson<String>(json['name']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      imageUrl: serializer.fromJson<String?>(json['imageUrl']),
     );
   }
   @override
@@ -146,20 +176,27 @@ class CachedCategory extends DataClass implements Insertable<CachedCategory> {
       'id': serializer.toJson<String>(id),
       'name': serializer.toJson<String>(name),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'imageUrl': serializer.toJson<String?>(imageUrl),
     };
   }
 
-  CachedCategory copyWith({String? id, String? name, int? sortOrder}) =>
-      CachedCategory(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        sortOrder: sortOrder ?? this.sortOrder,
-      );
+  CachedCategory copyWith({
+    String? id,
+    String? name,
+    int? sortOrder,
+    Value<String?> imageUrl = const Value.absent(),
+  }) => CachedCategory(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    sortOrder: sortOrder ?? this.sortOrder,
+    imageUrl: imageUrl.present ? imageUrl.value : this.imageUrl,
+  );
   CachedCategory copyWithCompanion(CachedCategoriesCompanion data) {
     return CachedCategory(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      imageUrl: data.imageUrl.present ? data.imageUrl.value : this.imageUrl,
     );
   }
 
@@ -168,37 +205,42 @@ class CachedCategory extends DataClass implements Insertable<CachedCategory> {
     return (StringBuffer('CachedCategory(')
           ..write('id: $id, ')
           ..write('name: $name, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('imageUrl: $imageUrl')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, sortOrder);
+  int get hashCode => Object.hash(id, name, sortOrder, imageUrl);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is CachedCategory &&
           other.id == this.id &&
           other.name == this.name &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.imageUrl == this.imageUrl);
 }
 
 class CachedCategoriesCompanion extends UpdateCompanion<CachedCategory> {
   final Value<String> id;
   final Value<String> name;
   final Value<int> sortOrder;
+  final Value<String?> imageUrl;
   final Value<int> rowid;
   const CachedCategoriesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.imageUrl = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CachedCategoriesCompanion.insert({
     required String id,
     required String name,
     this.sortOrder = const Value.absent(),
+    this.imageUrl = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name);
@@ -206,12 +248,14 @@ class CachedCategoriesCompanion extends UpdateCompanion<CachedCategory> {
     Expression<String>? id,
     Expression<String>? name,
     Expression<int>? sortOrder,
+    Expression<String>? imageUrl,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (imageUrl != null) 'image_url': imageUrl,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -220,12 +264,14 @@ class CachedCategoriesCompanion extends UpdateCompanion<CachedCategory> {
     Value<String>? id,
     Value<String>? name,
     Value<int>? sortOrder,
+    Value<String?>? imageUrl,
     Value<int>? rowid,
   }) {
     return CachedCategoriesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
       sortOrder: sortOrder ?? this.sortOrder,
+      imageUrl: imageUrl ?? this.imageUrl,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -242,6 +288,9 @@ class CachedCategoriesCompanion extends UpdateCompanion<CachedCategory> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (imageUrl.present) {
+      map['image_url'] = Variable<String>(imageUrl.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -254,6 +303,7 @@ class CachedCategoriesCompanion extends UpdateCompanion<CachedCategory> {
           ..write('id: $id, ')
           ..write('name: $name, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('imageUrl: $imageUrl, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1837,6 +1887,7 @@ typedef $$CachedCategoriesTableCreateCompanionBuilder =
       required String id,
       required String name,
       Value<int> sortOrder,
+      Value<String?> imageUrl,
       Value<int> rowid,
     });
 typedef $$CachedCategoriesTableUpdateCompanionBuilder =
@@ -1844,6 +1895,7 @@ typedef $$CachedCategoriesTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> name,
       Value<int> sortOrder,
+      Value<String?> imageUrl,
       Value<int> rowid,
     });
 
@@ -1868,6 +1920,11 @@ class $$CachedCategoriesTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get imageUrl => $composableBuilder(
+    column: $table.imageUrl,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -1895,6 +1952,11 @@ class $$CachedCategoriesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get imageUrl => $composableBuilder(
+    column: $table.imageUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CachedCategoriesTableAnnotationComposer
@@ -1914,6 +1976,9 @@ class $$CachedCategoriesTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<String> get imageUrl =>
+      $composableBuilder(column: $table.imageUrl, builder: (column) => column);
 }
 
 class $$CachedCategoriesTableTableManager
@@ -1956,11 +2021,13 @@ class $$CachedCategoriesTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String?> imageUrl = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CachedCategoriesCompanion(
                 id: id,
                 name: name,
                 sortOrder: sortOrder,
+                imageUrl: imageUrl,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1968,11 +2035,13 @@ class $$CachedCategoriesTableTableManager
                 required String id,
                 required String name,
                 Value<int> sortOrder = const Value.absent(),
+                Value<String?> imageUrl = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CachedCategoriesCompanion.insert(
                 id: id,
                 name: name,
                 sortOrder: sortOrder,
+                imageUrl: imageUrl,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,10 @@ import '../../../../core/providers/core_providers.dart';
 import '../../../settings/presentation/settings_screen.dart';
 import '../providers/auth_providers.dart';
 
+/// Kirish ekrani — Figma "LOGIN" dizayni:
+/// chapда aurora fon + shisha logo, o'ngда qora panel (AIBA + PIN + klaviatura).
+/// PIN-only: kassir 4 xonali PIN teradi → to'liq bo'lganда AVTOMATIK kiradi.
+/// To'g'ri → ilovaga o'tadi; xato → qizil toast + qizil nuqtalar.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -12,305 +18,381 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-/// Ekran klaviaturasi qaysi maydonga yozadi (sensorli kassada fizik
-/// klaviatura yo'q — hamma raqamli maydon shu pad orqali to'ldiriladi).
-enum _PadTarget { staff, pin, cash }
+const int _pinLength = 4;
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  // Terminal kodi endi Sozlamalarda (⚙️) turadi — kassir faqat o'z kodi va
-  // PIN'ini kiritadi, chalg'imaydi.
-  final _staffCode = TextEditingController();
   String _pin = '';
-  bool _openShift = true;
-  final _openingCash = TextEditingController(text: '0');
-
-  /// Faol maydon — pad raqamlari shunga yoziladi. Maydonga bosilsa almashadi.
-  _PadTarget _target = _PadTarget.staff;
+  Timer? _errorTimer;
 
   @override
   void dispose() {
-    _staffCode.dispose();
-    _openingCash.dispose();
+    _errorTimer?.cancel();
     super.dispose();
   }
 
-  void _padPress(String digit) {
-    setState(() {
-      switch (_target) {
-        case _PadTarget.staff:
-          if (_staffCode.text.length < 12) _staffCode.text += digit;
-          // Xodim kodi to'lgach kassir odatda PIN'ga o'tadi — kod maydoniga
-          // bosilganda yana qaytadi.
-          break;
-        case _PadTarget.pin:
-          if (_pin.length < 8) _pin += digit;
-          break;
-        case _PadTarget.cash:
-          final cur = _openingCash.text;
-          if (cur.length >= 10) return;
-          _openingCash.text = cur == '0' ? digit : cur + digit;
-          break;
-      }
-    });
+  void _digit(String d) {
+    if (ref.read(loginControllerProvider).loading) return;
+    if (_pin.length >= _pinLength) return;
+    // Yangi raqam terila boshlaganда eski xato yo'qoladi.
+    if (ref.read(loginControllerProvider).error != null) {
+      ref.read(loginControllerProvider.notifier).clearError();
+    }
+    setState(() => _pin += d);
+    // Yashirin avariya kodi "000" — Sozlamalarni ochadi (login sahifasида
+    // ko'rinadigan tugma yo'q). Odatда sozlash birinchi o'rnatishда bir marta
+    // qilinadi; bu kod noto'g'ri sozlashдан keyin ham qayta kirish uchun.
+    if (_pin == '000') {
+      setState(() => _pin = '');
+      // FAQAT BIR MARTA: terminal bir marta muvaffaqiyatli kirgandan keyin
+      // (`setupDone`) bu kod umuman ishlamaydi — kassir sozlamani buzmaydi.
+      if (ref.read(appConfigProvider).setupDone) return;
+      _openSettings();
+      return;
+    }
+    if (_pin.length == _pinLength) _submit();
   }
 
-  void _padBackspace() {
-    setState(() {
-      switch (_target) {
-        case _PadTarget.staff:
-          final t = _staffCode.text;
-          if (t.isNotEmpty) _staffCode.text = t.substring(0, t.length - 1);
-          break;
-        case _PadTarget.pin:
-          if (_pin.isNotEmpty) _pin = _pin.substring(0, _pin.length - 1);
-          break;
-        case _PadTarget.cash:
-          final t = _openingCash.text;
-          _openingCash.text = t.length <= 1 ? '0' : t.substring(0, t.length - 1);
-          break;
-      }
-    });
+  void _backspace() {
+    if (_pin.isEmpty) return;
+    setState(() => _pin = _pin.substring(0, _pin.length - 1));
   }
-
-  void _setTarget(_PadTarget t) => setState(() => _target = t);
 
   Future<void> _submit() async {
     final terminalCode = ref.read(appConfigProvider).terminalCode.trim();
-    final staffCode = _staffCode.text.trim();
     if (terminalCode.isEmpty) {
-      // Bir martalik o'rnatish: administrator Sozlamalarda terminal kodini kiritadi.
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Terminal kodi kiritilmagan — Sozlamalar (⚙️) bo\'limida kiriting'),
-          action: SnackBarAction(
-            label: 'Sozlamalar',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Terminal kodi kiritilmagan — Sozlamalar (⚙️) bo\'limида kiriting'),
+        action: SnackBarAction(
+          label: 'Sozlamalar',
+          onPressed: _openSettings,
         ),
-      );
+      ));
+      setState(() => _pin = '');
       return;
     }
-    if (staffCode.isEmpty || _pin.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Xodim kodi va PIN to\'ldiring')),
-      );
-      return;
-    }
-
+    // PIN-only: staffCode bo'sh — backend PIN orqali xodimni topadi.
+    // Smena kirishда avtomatik ochiladi (opening_cash = 0).
     final ok = await ref.read(loginControllerProvider.notifier).login(
           terminalCode: terminalCode,
-          staffCode: staffCode,
+          staffCode: '',
           pin: _pin,
-          openShift: _openShift,
-          openingCash: num.tryParse(_openingCash.text.trim()) ?? 0,
+          openShift: true,
+          openingCash: 0,
         );
-    if (!ok) setState(() => _pin = '');
-    // On success, the root listens to sessionProvider and swaps the screen.
+    if (ok) {
+      // Sozlash tugadi — endi "000" kodi ishlamaydi.
+      await ref.read(appConfigProvider).markSetupDone();
+    }
+    if (!ok && mounted) setState(() => _pin = '');
   }
+
+  void _openSettings() => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+      );
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(loginControllerProvider);
+    // Xato paydo bo'lсa — 20 soniyadan so'ng o'zi yo'qoladi (raqam terilса ham
+    // darhol ketadi). Har yangi xatoда taymer qayta boshlanadi.
+    ref.listen<String?>(loginControllerProvider.select((s) => s.error),
+        (prev, next) {
+      _errorTimer?.cancel();
+      if (next != null) {
+        _errorTimer = Timer(const Duration(seconds: 20), () {
+          if (mounted) ref.read(loginControllerProvider.notifier).clearError();
+        });
+      }
+    });
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('AIBA POS — Kirish'),
-        actions: [
-          IconButton(
-            tooltip: 'Sozlamalar',
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
-        ],
+      backgroundColor: const Color(0xFF0C0C0E),
+      body: LayoutBuilder(
+        builder: (context, c) {
+          final wide = c.maxWidth >= 900;
+          final panel = _RightPanel(
+            pin: _pin,
+            error: state.error,
+            loading: state.loading,
+            onDigit: _digit,
+            onBackspace: _backspace,
+            onClearError: () => ref.read(loginControllerProvider.notifier).clearError(),
+          );
+          if (!wide) return SafeArea(child: panel);
+          return Row(
+            children: [
+              const Expanded(flex: 3, child: _BrandSide()),
+              SizedBox(width: 520, child: SafeArea(child: panel)),
+            ],
+          );
+        },
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+    );
+  }
+}
+
+/// Chap tomon — aurora fon + shisha logo (Figma'dан kesilgan bitta rasm).
+class _BrandSide extends StatelessWidget {
+  const _BrandSide();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFF060606),
+      child: SizedBox.expand(
+        child: Image(
+          image: AssetImage('assets/login_bg.png'),
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+        ),
+      ),
+    );
+  }
+}
+
+/// O'ng paneldagi kichik app-icon — flat AIBA belgisi (SVG), yumaloq kvadratда.
+class _AppIcon extends StatelessWidget {
+  const _AppIcon({this.size = 64});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C20),
+        borderRadius: BorderRadius.circular(size * 0.28),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      padding: EdgeInsets.all(size * 0.12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.18),
+        child: Image.asset('assets/logo_glass.png', fit: BoxFit.contain),
+      ),
+    );
+  }
+}
+
+class _RightPanel extends StatelessWidget {
+  const _RightPanel({
+    required this.pin,
+    required this.error,
+    required this.loading,
+    required this.onDigit,
+    required this.onBackspace,
+    required this.onClearError,
+  });
+
+  final String pin;
+  final String? error;
+  final bool loading;
+  final ValueChanged<String> onDigit;
+  final VoidCallback onBackspace;
+  final VoidCallback onClearError;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF0C0C0E),
+      child: Stack(
+        children: [
+          // 1) Kontent — eng ostida (toast/gear ustдан bosilsин deб).
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 96, 28, 28),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Xodim kodi — bosilsa pad shu maydonga yozadi (faolligi
-                // yashil qalin ramka bilan ko'rinadi).
-                TextField(
-                  controller: _staffCode,
-                  autofocus: true,
-                  onTap: () => _setTarget(_PadTarget.staff),
-                  decoration: InputDecoration(
-                    labelText: 'Xodim kodi',
-                    hintText: '101',
-                    border: const OutlineInputBorder(),
-                    enabledBorder: _target == _PadTarget.staff
-                        ? OutlineInputBorder(
-                            borderSide: BorderSide(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 2,
-                            ),
-                          )
-                        : const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.badge),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
+                const _AppIcon(size: 64),
                 const SizedBox(height: 16),
-                // PIN qatori — bosilsa pad PIN'ga yozadi.
-                _PinDisplay(
-                  length: _pin.length,
-                  active: _target == _PadTarget.pin,
-                  onTap: () => _setTarget(_PadTarget.pin),
-                ),
-                const SizedBox(height: 12),
-                _PinPad(onDigit: _padPress, onBackspace: _padBackspace),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Kirishda smenani ochish'),
-                  value: _openShift,
-                  onChanged: (v) => setState(() {
-                    _openShift = v;
-                    if (!v && _target == _PadTarget.cash) {
-                      _target = _PadTarget.staff;
-                    }
-                  }),
-                ),
-                if (_openShift)
-                  TextField(
-                    controller: _openingCash,
-                    onTap: () => _setTarget(_PadTarget.cash),
-                    decoration: InputDecoration(
-                      labelText: 'Boshlang\'ich kassa (so\'m)',
-                      border: const OutlineInputBorder(),
-                      enabledBorder: _target == _PadTarget.cash
-                          ? OutlineInputBorder(
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2,
-                              ),
-                            )
-                          : const OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                if (state.error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(state.error!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ),
-                const SizedBox(height: 16),
+                const Text('AIBA',
+                    style: TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                const SizedBox(height: 4),
+                const Text('POS system', style: TextStyle(color: Color(0xFF9AA0A6), fontSize: 16)),
+                const SizedBox(height: 40),
+                _PinDots(length: pin.length, error: error != null),
+                const SizedBox(height: 40),
+                _Keypad(onDigit: onDigit, onBackspace: onBackspace),
+                const SizedBox(height: 8),
+                // Yuklanish holati — PIN to'lgach avto-kirishda ko'rinadi.
                 SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: state.loading ? null : _submit,
-                    child: state.loading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Kirish', style: TextStyle(fontSize: 18)),
-                  ),
+                  height: 24,
+                  child: loading
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2AA9E0)),
+                        )
+                      : null,
                 ),
               ],
             ),
           ),
-        ),
+          // Xato toasti — eng ustда (X bosilsin).
+          if (error != null)
+            Positioned(
+              top: 12,
+              left: 20,
+              right: 20,
+              child: _ErrorToast(text: error!, onClose: onClearError),
+            ),
+        ],
       ),
     );
   }
 }
 
-class _PinDisplay extends StatelessWidget {
-  const _PinDisplay({
-    required this.length,
-    required this.active,
-    required this.onTap,
-  });
-
-  final int length;
-
-  /// Pad hozir PIN'ga yozadimi — faol bo'lsa ramka bilan ajralib turadi.
-  final bool active;
-  final VoidCallback onTap;
+class _ErrorToast extends StatelessWidget {
+  const _ErrorToast({required this.text, required this.onClose});
+  final String text;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: active ? scheme.primary : Theme.of(context).dividerColor,
-            width: active ? 2 : 1,
-          ),
-          color: active ? scheme.primary.withValues(alpha: 0.05) : null,
-        ),
+    const red = Color(0xFFE5484D);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: IntrinsicHeight(
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            length.clamp(0, 8).clamp(1, 8),
-            (i) => Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: i < length
-                    ? scheme.primary
-                    : scheme.surfaceContainerHighest,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Chap qizil aksent chiziq.
+            Container(width: 5, color: red),
+            Expanded(
+              child: Container(
+                color: const Color(0xF22B2B31),
+                padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                child: Row(
+                  children: [
+                    // Qizil doira ichida ogohlantirish belgisi.
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: const BoxDecoration(
+                          color: red, shape: BoxShape.circle),
+                      child: const Icon(Icons.warning_amber_rounded,
+                          color: Colors.white, size: 19),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: Text(text,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600))),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: onClose,
+                      borderRadius: BorderRadius.circular(20),
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(Icons.close,
+                            color: Colors.white70, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          )..insert(
-              0,
-              Text('PIN: ', style: Theme.of(context).textTheme.labelLarge),
-            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _PinPad extends StatelessWidget {
-  const _PinPad({required this.onDigit, required this.onBackspace});
-  final void Function(String) onDigit;
+/// PIN indikatori — bo'sh = chiziqcha, to'la = nuqta, xato = qizil.
+class _PinDots extends StatelessWidget {
+  const _PinDots({required this.length, required this.error});
+  final int length;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) {
+    const red = Color(0xFFE5484D);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(_pinLength, (i) {
+        // Xato holatida (Figma): barcha 4 nuqta qizil to'la ko'rinadi.
+        final filled = error || i < length;
+        final color = error
+            ? red
+            : (i < length ? Colors.white : const Color(0xFF3A3A40));
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.symmetric(horizontal: 11),
+          width: filled ? 13 : 20,
+          height: filled ? 13 : 3,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(filled ? 7 : 2),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+/// Raqamli klaviatura — 1..9, [bo'sh] 0 backspace. Dizayndagi qora yumaloq keys.
+class _Keypad extends StatelessWidget {
+  const _Keypad({required this.onDigit, required this.onBackspace});
+  final ValueChanged<String> onDigit;
   final VoidCallback onBackspace;
 
   @override
   Widget build(BuildContext context) {
-    final buttons = <Widget>[
-      for (var i = 1; i <= 9; i++) _key(context, '$i'),
-      const SizedBox.shrink(),
-      _key(context, '0'),
-      IconButton(
-        iconSize: 28,
-        onPressed: onBackspace,
-        icon: const Icon(Icons.backspace_outlined),
+    Widget key(String d) => _KeyButton(label: d, onTap: () => onDigit(d));
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 380),
+      child: GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: 1.35,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        children: [
+          for (var i = 1; i <= 9; i++) key('$i'),
+          const SizedBox.shrink(),
+          key('0'),
+          _KeyButton(icon: Icons.backspace_outlined, onTap: onBackspace),
+        ],
       ),
-    ];
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.8,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      children: buttons,
     );
   }
+}
 
-  Widget _key(BuildContext context, String d) {
-    return OutlinedButton(
-      onPressed: () => onDigit(d),
-      child: Text(d, style: const TextStyle(fontSize: 22)),
+class _KeyButton extends StatefulWidget {
+  const _KeyButton({this.label, this.icon, required this.onTap});
+  final String? label;
+  final IconData? icon;
+  final VoidCallback onTap;
+
+  @override
+  State<_KeyButton> createState() => _KeyButtonState();
+}
+
+class _KeyButtonState extends State<_KeyButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 90),
+        decoration: BoxDecoration(
+          color: _down ? const Color(0xFF3A3A40) : const Color(0xFF2A2A2E),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Center(
+          child: widget.icon != null
+              ? Icon(widget.icon, color: Colors.white, size: 28)
+              : Text(widget.label!,
+                  style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w500)),
+        ),
+      ),
     );
   }
 }

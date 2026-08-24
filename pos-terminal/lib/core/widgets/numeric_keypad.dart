@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'pos_chrome.dart';
+
 /// Ekran ichidagi raqam klaviaturasi — sensorli kassa/tablet uchun asosiy
 /// kirish usuli (Windows kassalarda fizik klaviatura bo'lmaydi).
 /// 3×4 grid: 1 2 3 / 4 5 6 / 7 8 9 / C 0 ⌫. Katta tugmalar barmoq uchun.
@@ -29,7 +31,7 @@ class NumericKeypad extends StatelessWidget {
             child: IconButton(
               tooltip: 'Klaviaturani yashirish',
               onPressed: onHide,
-              icon: const Icon(Icons.keyboard_hide_outlined),
+              icon: const Icon(Icons.keyboard_hide_outlined, color: Colors.white54),
             ),
           ),
         _row([_key('1'), _key('2'), _key('3')]),
@@ -77,13 +79,12 @@ class _KeypadTileState extends State<_KeypadTile> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = widget.color ?? theme.colorScheme.primary;
+    final accent = widget.color ?? PosColors.blue;
     return AnimatedScale(
       duration: const Duration(milliseconds: 90),
       scale: _pressed ? 0.94 : 1.0,
       child: Material(
-        color: _pressed ? accent.withValues(alpha: 0.12) : theme.colorScheme.surface,
+        color: _pressed ? accent.withValues(alpha: 0.18) : PosColors.card,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: widget.onTap,
@@ -99,7 +100,7 @@ class _KeypadTileState extends State<_KeypadTile> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: _pressed ? accent : theme.dividerColor,
+                color: _pressed ? accent : PosColors.cardBorder,
                 width: _pressed ? 1.8 : 1.2,
               ),
             ),
@@ -109,7 +110,7 @@ class _KeypadTileState extends State<_KeypadTile> {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
-                color: widget.color ?? theme.colorScheme.onSurface,
+                color: widget.color ?? Colors.white,
               ),
             ),
           ),

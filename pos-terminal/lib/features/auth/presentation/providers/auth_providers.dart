@@ -94,6 +94,11 @@ class LoginController extends StateNotifier<LoginState> {
       return false;
     }
   }
+
+  /// Xato toast'ini yopish (foydalanuvchi ✕ bosсa).
+  void clearError() {
+    if (state.error != null) state = const LoginState();
+  }
 }
 
 final loginControllerProvider =

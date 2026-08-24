@@ -31,6 +31,10 @@ final appConfigProvider = Provider<AppConfig>((ref) {
   );
 });
 
+/// Sozlamalar saqlanganда oshiriladi. Ilova ildizi buni kuzatib, birinchi
+/// o'rnatiш (setup) → login o'tishini qayta baholaydi.
+final configVersionProvider = StateProvider<int>((ref) => 0);
+
 /// Bumped by [DioClient] whenever an authenticated request returns 401.
 /// The app root listens and forces a re-login ("session expired").
 final sessionExpiredSignalProvider = StateProvider<int>((ref) => 0);

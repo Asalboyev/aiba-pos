@@ -28,6 +28,22 @@ class ReceiptData {
   /// Chek chop etishdan oldin printer-service uni yuklaydi.
   final List<int>? logoBytes;
 
+  /// Chek XATO deb belgilangan bo'lsa — chekning boshida katta
+  /// "XATO CHEK №13" banneri chiqadi (tekshiruvchi darhol ko'radi).
+  final bool isErrorCheck;
+
+  /// Xato sababi (kassir tanlagan) — banner ostida chiqadi.
+  final String? errorReason;
+
+  /// TO'LOV KODI (QR) — mijoz skanerlab to'laydigan havola (WLCM checkout).
+  /// Berilsa: chek "TO'LOV UCHUN" ko'rinishida chiqadi (fiskal QR emas) —
+  /// bu 1-chek. To'lov o'tgach 2-chek fiskal QR bilan chiqadi.
+  final String? paymentQrUrl;
+
+  /// Bu chek qaysi XATO chek o'rniga urilgani (masalan "13") — to'g'ri
+  /// urilgan chekda "XATO CHEK №13 o'rniga" satri chiqadi.
+  final String? replacesErrorNumber;
+
   const ReceiptData({
     required this.restaurantName,
     this.terminalName,
@@ -49,6 +65,10 @@ class ReceiptData {
     this.showMxik = true,
     this.paperWidth = 80,
     this.logoBytes,
+    this.paymentQrUrl,
+    this.isErrorCheck = false,
+    this.errorReason,
+    this.replacesErrorNumber,
   });
 
   ReceiptData copyWith({List<int>? logoBytes}) => ReceiptData(
@@ -72,6 +92,10 @@ class ReceiptData {
         showMxik: showMxik,
         paperWidth: paperWidth,
         logoBytes: logoBytes ?? this.logoBytes,
+        paymentQrUrl: paymentQrUrl,
+        isErrorCheck: isErrorCheck,
+        errorReason: errorReason,
+        replacesErrorNumber: replacesErrorNumber,
       );
 
   /// True if any line carries an MXIK code AND user wants MXIK shown.
