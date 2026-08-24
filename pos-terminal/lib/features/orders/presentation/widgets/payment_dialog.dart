@@ -41,7 +41,19 @@ class _PaymentDialogState extends State<PaymentDialog> {
       TextEditingController(text: widget.total.round().toString());
 
   @override
+  void initState() {
+    super.initState();
+    // Har bir bosilgan raqamda qaytim va tugmalar holati qayta hisoblanadi.
+    _amount.addListener(_onAmountChanged);
+  }
+
+  void _onAmountChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _amount.removeListener(_onAmountChanged);
     _amount.dispose();
     super.dispose();
   }
@@ -49,7 +61,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
   num get _paid => _parts.fold<num>(0, (s, p) => s + p.amount);
   num get _remaining => widget.total - _paid;
   num get _amountValue => num.tryParse(_amount.text.trim()) ?? 0;
-  num get _change => _method == PaymentMethod.cash ? _amountValue - _remaining : 0;
+  /// Kassir ortiq summa kiritsa — qaytim. To'lov usuli muhim emas: kassir
+  /// mijozga qancha qaytarishini darhol ko'rishi kerak.
+  num get _change => _amountValue - _remaining;
   bool _used(PaymentMethod m) => _parts.any((p) => p.method == m);
   bool get _inSplit => _parts.isNotEmpty;
 
@@ -271,7 +285,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ),
                 ),
               ),
-              if (_method == PaymentMethod.cash && _change > 0) ...[
+              if (_change > 0) ...[
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -319,7 +333,10 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 ),
                 const SizedBox(height: 10),
                 _Btn(
-                  label: "Bo'lib to'lash: ${Money.formatSom(_remaining - _amountValue)}",
+                  label: canAddPart
+                      ? "Bo'lib to'lash: ${Money.formatSom(_amountValue)}"
+                          " · qoldi ${Money.formatSom(_remaining - _amountValue)}"
+                      : "Bo'lib to'lash — summani jamidan kam qilib tering",
                   icon: Icons.swap_horiz,
                   filled: false,
                   onTap: canAddPart ? _addPart : null,
