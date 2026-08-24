@@ -3,9 +3,12 @@
 
 Foydalanish:
     python3 import_old_pos.py <restaurant_id> --mdb <fayl.mdb> --token <JWT> [--dry]
+    #   --dry        hech narsa yozmaydi, faqat nechta bo'lishini aytadi
+    #   --skip-menu  kategoriya/taomlarni o'tkazib yuboradi (allaqachon bor bo'lsa)
     # yoki muhit o'zgaruvchilari: POS_MDB, POS_TOKEN, POS_API
 
 Manba jadvallar (mdb-export bilan CSV'ga chiqarилган):
+  vidbluda / vidbludapod / bluda — kategoriya va taomlar (menyu)
   tovar   — masalliq/tovar kartochkalari (nom, birlik, narx)
   bluda   — taomlar (nomi bo'yicha pos.products bilan bog'lanadi)
   kalkul1 — tex-karta qatorlari (bluda_art → tovar_art, netto kg/dona)
@@ -104,6 +107,61 @@ def main() -> None:
         sys.exit("--mdb va --token (yoki POS_MDB / POS_TOKEN) kerak")
     api = Api(token, rid)
 
+    # ── 0. Menyu: kategoriya + mahsulot (vidbluda / vidbludapod / bluda) ──────
+    # Yangi filialda menyu bo'sh bo'ladi — shuning uchun avval taomlarni
+    # kiritamiz, keyin tex-karta ular bilan bog'lanadi.
+    if "--skip-menu" not in sys.argv:
+        vidbluda = {(r.get("vidbluda_art") or "").strip():
+                    (r.get("vidbluda_naz") or "").strip().strip('"')
+                    for r in export("vidbluda")
+                    if (r.get("del") or "n").strip('"') != "y"}
+        # bluda → vidbludapod_art → vidbluda_art → kategoriya nomi
+        pod = {(r.get("vidbludapod_art") or "").strip(): (r.get("vidbluda_art") or "").strip()
+               for r in export("vidbludapod")}
+        have_cats = {c["name"]: c["id"] for c in api.call("/categories?include_inactive=true")}
+        cat_new = 0
+        cat_id: dict[str, str] = {}
+        for art, cname in vidbluda.items():
+            if not cname:
+                continue
+            if cname in have_cats:
+                cat_id[art] = have_cats[cname]
+            elif dry:
+                cat_id[art] = f"dry-{art}"
+                cat_new += 1
+            else:
+                cat_id[art] = api.call("/categories", {"name": cname[:200]})["id"]
+                cat_new += 1
+
+        have_prods = {p["name"]: p for p in api.call("/products?include_inactive=true")}
+        p_new = p_skip = 0
+        for r in export("bluda"):
+            if (r.get("del") or "n").strip('"') == "y":
+                continue
+            name = (r.get("bluda_naz") or "").strip().strip('"')
+            price = num(r.get("bluda_zena"))
+            if not name:
+                continue
+            if name in have_prods:
+                p_skip += 1
+                continue
+            mxik = (r.get("classCode") or "").strip().strip('"')
+            body = {
+                "name": name[:200],
+                "price": price,
+                "sku": (r.get("bluda_kod") or "").strip().strip('"') or None,
+                "category_id": cat_id.get(pod.get((r.get("vidbludapod_art") or "").strip(), "")),
+                "mxik_code": mxik if mxik not in ("", "0") else None,
+                "package_code": (r.get("packageCode") or "").strip().strip('"') or None,
+                "unit": "dona",
+                "is_active": (r.get("menu") or "y").strip('"') != "n",
+            }
+            if not dry:
+                api.call("/products", body)
+            p_new += 1
+        print(f"0. MENYU: {cat_new} yangi kategoriya, {p_new} yangi taom "
+              f"({p_skip} allaqachon bor)")
+
     # ── 1. Ombor kartochkalari (tovar) ────────────────────────────────────────
     tovar = [r for r in export("tovar") if (r.get("del") or "n").strip('"') != "y"]
     have = {(i.get("sku") or ""): i for i in api.call("/stock/items")["items"]}
@@ -138,6 +196,11 @@ def main() -> None:
     art_name = {(r.get("bluda_art") or "").strip(): (r.get("bluda_naz") or "").strip().strip('"')
                 for r in bluda}
     products = {p["name"]: p["id"] for p in api.call("/products?include_inactive=false")}
+    if dry:
+        # --dry rejimida taomlar haqiqatan yaratilmaydi — tex-karta nechta
+        # bo'lishini ko'rsatish uchun nomlarni shartli qo'shamiz.
+        for nm in art_name.values():
+            products.setdefault(nm, f"dry-{nm}")
 
     lines: dict[str, list[dict]] = {}
     skipped_item = skipped_dish = 0
