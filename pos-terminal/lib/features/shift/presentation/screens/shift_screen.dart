@@ -170,9 +170,16 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     final staffName = session?.staff.name ?? 'Xodim';
     final kassa = session?.terminal.name ?? 'Kassa';
 
-    return Padding(
+    return LayoutBuilder(builder: (context, bc) {
+      // Kichik kassa ekrani (moноblok ~1024px): «Top mahsulotlar» paneli
+      // torayadi yoki butunlay yashirinadi — asosiy statistika birinchi.
+      final w = bc.maxWidth;
+      final panelW = w >= 1240 ? 340.0 : (w >= 1020 ? 260.0 : 0.0);
+      final compact = w < 1020;
+      return Padding(
       // Yangilash/avatar chap menyuga ko'chdi — tepada bo'sh joy kerak emas.
-      padding: const EdgeInsets.fromLTRB(4, 16, 16, 16),
+      padding: EdgeInsets.fromLTRB(4, compact ? 10 : 16, compact ? 10 : 16,
+          compact ? 10 : 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -183,17 +190,20 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
                 color: PosColors.panel,
                 borderRadius: BorderRadius.circular(20),
               ),
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              padding: EdgeInsets.all(compact ? 14 : 24),
               // Darhol chiziladi (spinner o'rniga) — ma'lumot kelgach yangilanadi.
               child: _dashboard(
                   context, ref, shiftAsync.valueOrNull, staffName, kassa),
             ),
           ),
-          const SizedBox(width: 16),
-          const SizedBox(width: 340, child: _TopProductsPanel()),
+          if (panelW > 0) ...[
+            const SizedBox(width: 16),
+            SizedBox(width: panelW, child: const _TopProductsPanel()),
+          ],
         ],
       ),
     );
+    });
   }
 
   Widget _dashboard(BuildContext context, WidgetRef ref, Shift? shift,
@@ -285,88 +295,104 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
       ],
     );
 
-    return SingleChildScrollView(
+    // Plitkalar: keng ekranда bitta qatorda, kichik kassa ekranida (tor)
+    // 2 tadan bo'lib joylashadi — siqilib «har xil» ko'rinmaydi.
+    Widget tileRows(List<Widget> tiles, bool compact, {int perRow = 2}) {
+      if (!compact) {
+        return Row(children: [
+          for (var i = 0; i < tiles.length; i++) ...[
+            if (i > 0) const SizedBox(width: 14),
+            tiles[i],
+          ],
+        ]);
+      }
+      final rows = <Widget>[];
+      for (var i = 0; i < tiles.length; i += perRow) {
+        if (rows.isNotEmpty) rows.add(const SizedBox(height: 10));
+        final chunk = tiles.sublist(
+            i, (i + perRow > tiles.length) ? tiles.length : i + perRow);
+        rows.add(Row(children: [
+          for (var j = 0; j < chunk.length; j++) ...[
+            if (j > 0) const SizedBox(width: 10),
+            chunk[j],
+          ],
+        ]));
+      }
+      return Column(children: rows);
+    }
+
+    final miniTiles = <Widget>[
+      _MiniTile(label: 'Boshlang\'ich kassa', value: Money.formatSom(opening)),
+      // Joriy kassa = boshlang'ich + naqd savdo − rasxodlar.
+      _MiniTile(
+          label: 'Joriy kassa',
+          value: Money.formatSom(
+              opening + totalCash - (shift?.expensesTotal ?? 0)),
+          valueColor: PosColors.green),
+      // Manager Telegram botga «rasxod 50000 izoh» deb yozadi.
+      _MiniTile(
+          label: 'Rasxod',
+          value: Money.formatSom(shift?.expensesTotal ?? 0),
+          valueColor: PosColors.red),
+      _MiniTile(
+          label: 'Jami daromad',
+          value: Money.formatSom(totalSales),
+          valueColor: PosColors.green),
+    ];
+
+    // To'lov turlari kesimi: Naqd / Karta / Click / Uzum — har biri alohida
+    // (admin paneldagi hisobot bilan bir xil).
+    final payTiles = <Widget>[
+      _MiniTile(label: 'Naqd savdo', value: Money.formatSom(totalCash)),
+      _MiniTile(
+          label: 'Karta savdo', value: Money.formatSom(shift?.cardOnly ?? 0)),
+      _MiniTile(
+          label: 'Click savdo',
+          value: Money.formatSom(shift?.clickTotal ?? 0)),
+      _MiniTile(
+          label: 'Uzum savdo', value: Money.formatSom(shift?.uzumTotal ?? 0)),
+    ];
+
+    final centerTiles = <Widget>[
+      _CenterTile(value: '$ordersCount ta', label: 'Buyurtmalar'),
+      _CenterTile(
+          value: errorChecks > 0 ? '$errorChecks ta' : '-',
+          label: 'Bekor qilingan',
+          valueColor: PosColors.red),
+      _CenterTile(
+          value: ordersCount > 0 ? Money.formatSom(avg) : '0 so\'m',
+          label: 'O\'rtacha chek'),
+      _CenterTile(
+          value: '$efficiency%',
+          label: 'Samaradorlik',
+          valueColor: PosColors.green),
+      // Bugungi keldi-ketdi (VIP comp) cheklar soni.
+      _CenterTile(
+          value: '${ref.watch(keldiKetdiTodayProvider).valueOrNull ?? 0} ta',
+          label: 'Keldi-ketdi',
+          valueColor: const Color(0xFFF5A623)),
+    ];
+
+    return LayoutBuilder(builder: (context, dc) {
+      final compact = dc.maxWidth < 720;
+      final gap = compact ? 12.0 : 18.0;
+      return SingleChildScrollView(
       child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Figma: smena FAOL bo'lsa xodim qatori tepada, bo'lmasa statlar.
         if (isOpen) staffRow else statsRow,
-        const SizedBox(height: 18),
+        SizedBox(height: gap),
         if (isOpen) statsRow else staffRow,
-        const SizedBox(height: 18),
+        SizedBox(height: gap),
         // 3) Boshlang'ich kassa / Joriy kassa / Jami daromad — to'liq summa
         // ("50 000 so'm"), qisqartma ("50 K") kassirni chalg'itadi.
-        Row(
-          children: [
-            _MiniTile(label: 'Boshlang\'ich kassa', value: Money.formatSom(opening)),
-            const SizedBox(width: 14),
-            // Joriy kassa = boshlang'ich + naqd savdo − rasxodlar.
-            _MiniTile(
-                label: 'Joriy kassa',
-                value: Money.formatSom(
-                    opening + totalCash - (shift?.expensesTotal ?? 0)),
-                valueColor: PosColors.green),
-            const SizedBox(width: 14),
-            // Manager Telegram botga «rasxod 50000 izoh» deb yozadi.
-            _MiniTile(
-                label: 'Rasxod',
-                value: Money.formatSom(shift?.expensesTotal ?? 0),
-                valueColor: PosColors.red),
-            const SizedBox(width: 14),
-            _MiniTile(
-                label: 'Jami daromad',
-                value: Money.formatSom(totalSales),
-                valueColor: PosColors.green),
-          ],
-        ),
+        tileRows(miniTiles, compact),
         const SizedBox(height: 14),
-        // 4) To'lov turlari kesimi: Naqd / Karta / Click / Uzum — har biri
-        // alohida (admin paneldagi hisobot bilan bir xil).
-        Row(
-          children: [
-            _MiniTile(label: 'Naqd savdo', value: Money.formatSom(totalCash)),
-            const SizedBox(width: 14),
-            _MiniTile(
-                label: 'Karta savdo',
-                value: Money.formatSom(shift?.cardOnly ?? 0)),
-            const SizedBox(width: 14),
-            _MiniTile(
-                label: 'Click savdo',
-                value: Money.formatSom(shift?.clickTotal ?? 0)),
-            const SizedBox(width: 14),
-            _MiniTile(
-                label: 'Uzum savdo',
-                value: Money.formatSom(shift?.uzumTotal ?? 0)),
-          ],
-        ),
+        tileRows(payTiles, compact),
         const SizedBox(height: 14),
-        // 5) 4 ta markazlashgan ko'rsatkich (Figma).
-        Row(
-          children: [
-            _CenterTile(value: '$ordersCount ta', label: 'Buyurtmalar'),
-            const SizedBox(width: 14),
-            _CenterTile(
-                value: errorChecks > 0 ? '$errorChecks ta' : '-',
-                label: 'Bekor qilingan',
-                valueColor: PosColors.red),
-            const SizedBox(width: 14),
-            _CenterTile(
-                value: ordersCount > 0 ? Money.formatSom(avg) : '0 so\'m',
-                label: 'O\'rtacha chek'),
-            const SizedBox(width: 14),
-            _CenterTile(
-                value: '$efficiency%',
-                label: 'Samaradorlik',
-                valueColor: PosColors.green),
-            const SizedBox(width: 14),
-            // Bugungi keldi-ketdi (VIP comp) cheklar soni.
-            _CenterTile(
-                value:
-                    '${ref.watch(keldiKetdiTodayProvider).valueOrNull ?? 0} ta',
-                label: 'Keldi-ketdi',
-                valueColor: const Color(0xFFF5A623)),
-          ],
-        ),
+        // 5) Markazlashgan ko'rsatkichlar (Figma) — torда 3+2 bo'lib.
+        tileRows(centerTiles, compact, perRow: 3),
         const SizedBox(height: 18),
         // 6) Boshlash / yopish tugmasi — FAQAT menejer. Kassir bu ekranni
         // ko'rmaydi ham, lekin qo'shimcha himoya sifatida tugma yashiriladi.
@@ -409,6 +435,7 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
       ],
       ),
     );
+    });
   }
 }
 
@@ -571,20 +598,26 @@ class _CenterTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(
           color: PosColors.card,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: PosColors.cardBorder),
         ),
         child: Column(children: [
-          Text(value,
-              style: TextStyle(
-                  color: valueColor ?? Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(value,
+                maxLines: 1,
+                style: TextStyle(
+                    color: valueColor ?? Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800)),
+          ),
           const SizedBox(height: 4),
           Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: PosColors.muted, fontSize: 12)),
         ]),
       ),
@@ -645,13 +678,16 @@ class _StatCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: PosColors.muted, fontSize: 13)),
             const SizedBox(height: 6),
-            Text(value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value,
+                  maxLines: 1,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800)),
+            ),
           ],
         ),
       ),
@@ -678,13 +714,21 @@ class _MiniTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: PosColors.muted, fontSize: 13)),
             const SizedBox(height: 8),
-            Text(value,
-                style: TextStyle(
-                    color: valueColor ?? Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700)),
+            // Summa BITTA qatorda — sig'masa avtomatik kichrayadi.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value,
+                  maxLines: 1,
+                  style: TextStyle(
+                      color: valueColor ?? Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700)),
+            ),
           ],
         ),
       ),

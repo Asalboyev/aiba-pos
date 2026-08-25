@@ -58,14 +58,19 @@ class ProductGrid extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             child: products.isEmpty
                 ? (searching ? const _NoResults() : const _EmptyProducts())
-                : GridView.builder(
+                : LayoutBuilder(builder: (context, gc) {
+                    // Kichik ekran (kassa monobloklari, ~1024px): 5 ta tor
+                    // katak o'rniga 4 ta KENGROQ katak — nomlar o'qiladi.
+                    // Har katak kamida ~150px bo'lsin.
+                    final cols = (gc.maxWidth / 162).floor().clamp(3, 6);
+                    final narrow = gc.maxWidth / cols < 165;
+                    return GridView.builder(
                     padding: EdgeInsets.zero,
                     gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      // Figma: har doim 5 ustun (170×165, oraliq 12) —
-                      // ekran katta bo'lsa kartalar proporsional kattalashadi.
-                      crossAxisCount: 5,
-                      childAspectRatio: 170 / 165,
+                        SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: cols,
+                      // Tor katakda nom 2 qator bo'ladi — biroz balandroq.
+                      childAspectRatio: narrow ? 0.88 : 170 / 165,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
                     ),
@@ -86,7 +91,8 @@ class ProductGrid extends ConsumerWidget {
                             : () => _addToCart(context, cart, p),
                       );
                     },
-                  ),
+                  );
+                  }),
           ),
         ),
       ],
@@ -553,13 +559,17 @@ class _ProductCardState extends State<_ProductCard> {
           onTapUp: (_) => setState(() => _pressed = false),
           onTapCancel: () => setState(() => _pressed = false),
           onTap: widget.onTap,
-          child: Container(
+          child: LayoutBuilder(builder: (context, cc) {
+            // Tor katak (kichik kassa ekrani): nom 2 QATOR (o'qiladi!),
+            // kod rasm ustida chip, narx har doim BITTA qator.
+            final narrow = cc.maxWidth < 165;
+            return Container(
             decoration: BoxDecoration(
               color: PosColors.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: PosColors.cardBorder),
             ),
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(narrow ? 8 : 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -572,6 +582,23 @@ class _ProductCardState extends State<_ProductCard> {
                           child: _ProductImage(url: widget.imageUrl),
                         ),
                       ),
+                      // Tor rejimда kod rasm ustida — nom qatoriga joy bo'shaydi.
+                      if (narrow && widget.code.isNotEmpty)
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text('#$shortCode',
+                                style: const TextStyle(
+                                    color: Color(0xB3FFFFFF), fontSize: 10)),
+                          ),
+                        ),
                       if (widget.markingRequired)
                         Positioned(
                           top: 6,
@@ -589,35 +616,53 @@ class _ProductCardState extends State<_ProductCard> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(widget.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Color(0xFFFAFAFA),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500)),
-                    ),
-                    // Figma: "#124" — oq 42%. Kod bo'sh bo'lsa ko'rsatilmaydi.
-                    if (widget.code.isNotEmpty)
-                      Text('#$shortCode',
-                          style: const TextStyle(
-                              color: Color(0x6BFFFFFF), fontSize: 12)),
-                  ],
-                ),
+                SizedBox(height: narrow ? 6 : 10),
+                if (narrow)
+                  Text(widget.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Color(0xFFFAFAFA),
+                          fontSize: 12.5,
+                          height: 1.15,
+                          fontWeight: FontWeight.w500))
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(widget.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Color(0xFFFAFAFA),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500)),
+                      ),
+                      // Figma: "#124" — oq 42%. Kod bo'sh bo'lsa ko'rsatilmaydi.
+                      if (widget.code.isNotEmpty)
+                        Text('#$shortCode',
+                            style: const TextStyle(
+                                color: Color(0x6BFFFFFF), fontSize: 12)),
+                    ],
+                  ),
                 const SizedBox(height: 4),
-                Text(Money.formatSom(widget.price),
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700)),
+                // Narx BITTA qatorda — sig'masa avtomatik kichrayadi
+                // (avval "8 000" / "so'm" ikki qatorga bo'linib ketardi).
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(Money.formatSom(widget.price),
+                      maxLines: 1,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: narrow ? 14 : 15,
+                          fontWeight: FontWeight.w700)),
+                ),
               ],
             ),
-          ),
+          );
+          }),
         ),
       ),
     );

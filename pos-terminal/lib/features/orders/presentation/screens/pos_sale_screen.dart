@@ -690,7 +690,10 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     final size = MediaQuery.of(context).size;
     final isWide = size.width >= 900;
     // Figma nisbatida savat kengligi: 301/1366 — katta ekranda kattalashadi.
-    final cartW = (size.width * 301 / 1366).clamp(301.0, 480.0);
+    // Kichik kassa ekranida (monoblok ~1024px) savat biroz torayadi —
+    // mahsulot kataklariga ko'proq joy qoladi.
+    final cartW =
+        (size.width * 301 / 1366).clamp(size.width < 1150 ? 268.0 : 301.0, 480.0);
 
     if (isWide) {
       // F-klavishlar GLOBAL handler orqali (initState) — fokusga bog'liq emas.
