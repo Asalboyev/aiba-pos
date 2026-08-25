@@ -1,7 +1,28 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../config/app_config.dart';
 import '../errors/failure.dart';
+
+/// ISRG (Let's Encrypt) ildiz sertifikatlari — ilova O'ZI bilan olib yuradi.
+/// Yangilanmagan/aktivlashtirilmagan Windows kassalarда tizim ishonch
+/// do'konida bu ildizlar yo'q va HTTPS «tarmoq xatosi» bilan yiqilardi.
+/// main() da bir marta yuklanadi.
+SecurityContext? _posSecurityContext;
+
+Future<void> loadBundledRoots() async {
+  try {
+    final pem = await rootBundle.load('assets/certs/roots.pem');
+    final ctx = SecurityContext(withTrustedRoots: true);
+    ctx.setTrustedCertificatesBytes(pem.buffer.asUint8List());
+    _posSecurityContext = ctx;
+  } catch (_) {
+    // Ildizlar yuklanmasa ham ilova ishlayveradi — tizim do'koniga tayanadi.
+  }
+}
 
 /// Thin wrapper around [Dio]. The base URL is read fresh from [AppConfig] on
 /// every request so a settings change takes effect without restart. A bearer
@@ -12,6 +33,12 @@ class DioClient {
       ..connectTimeout = const Duration(seconds: 10)
       ..receiveTimeout = const Duration(seconds: 20)
       ..headers['Content-Type'] = 'application/json';
+
+    // Har HttpClient bizning SecurityContext bilan yaratiladi — Let's Encrypt
+    // ildizlari ilova ichida, eski Windows'ning do'koniga bog'liq emas.
+    _dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () => HttpClient(context: _posSecurityContext),
+    );
 
     _dio.interceptors.add(
       InterceptorsWrapper(
