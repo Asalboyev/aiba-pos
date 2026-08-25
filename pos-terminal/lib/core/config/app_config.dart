@@ -33,7 +33,20 @@ class AppConfig {
   static const defaultCommunicatorUrl = 'http://127.0.0.1:8347/uzpos';
 
   String get baseUrl => _prefs.getString(_kBaseUrl) ?? defaultBaseUrl;
-  Future<void> setBaseUrl(String value) => _prefs.setString(_kBaseUrl, value.trim());
+
+  /// URL normalizatsiyasi: scheme yozilmagan bo'lsa qo'shiladi (IP/localhost →
+  /// http, domen → https), oxiridagi «/» olib tashlanadi. «next.aiba.uz» deb
+  /// yozilsa ham ishlayveradi — aks holda Dio «tarmoq xatosi» berardi.
+  Future<void> setBaseUrl(String value) {
+    var v = value.trim();
+    if (v.isNotEmpty && !v.contains('://')) {
+      final bare = RegExp(r'^(\d{1,3}(\.\d{1,3}){3}|localhost)(:\d+)?')
+          .hasMatch(v);
+      v = (bare ? 'http://' : 'https://') + v;
+    }
+    v = v.replaceAll(RegExp(r'/+$'), '');
+    return _prefs.setString(_kBaseUrl, v);
+  }
 
   String get terminalCode => _prefs.getString(_kTerminalCode) ?? '';
   Future<void> setTerminalCode(String value) =>
