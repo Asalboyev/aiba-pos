@@ -242,28 +242,153 @@ class PrinterService {
     });
   }
 
+  /// Sessiya davomida bir marta aniqlangan ishonchli navbat nomi.
+  static String? _winQueueCache;
+
   Future<PrintReport> _sendWindows(List<int> bytes) async {
-    // 1) Avval FFI (winspool to'g'ridan-to'g'ri) — tez va osilmaydi.
-    //    Nom kiritilgan bo'lsa FAQAT shu yo'l: xato bo'lsa sababi aniq
-    //    qaytadi, PowerShell'ga tushmaydi.
+    // Yangi oqim: (1) ishonchli RAW navbatni ANIQLAB olamiz (Generic/Text
+    // Only, kerak bo'lsa o'zimiz o'rnatamiz), (2) FFI bilan yozamiz,
+    // (3) hujjat navbatdan CHIQIB KETGANINI tekshiramiz — chiqmasa bu XATO
+    // (avval "chop etildi" deb yolg'on aytilib qog'oz chiqmasdi), avto
+    // rejimda navbat portini o'zimiz davolab bir marta qayta urinamiz.
     final cfgName = _config.printerName;
-    try {
-      final err = _win32RawPrint(cfgName, bytes);
-      if (err == null) {
-        return PrintReport(
-            PrintOutcome.printed,
-            'Chek chop etildi → '
-            '${cfgName.isEmpty ? 'standart printer' : cfgName}');
-      }
-      debugPrint('[PrinterService] win32 ffi: $err');
-      if (cfgName.isNotEmpty) {
-        return PrintReport(PrintOutcome.failed, err);
-      }
-      // Nomsiz rejimda avto-aniqlash uchun PowerShell'ga o'tamiz.
-    } catch (e) {
-      debugPrint('[PrinterService] win32 ffi exception: $e');
+    String? queue = cfgName.isNotEmpty ? cfgName : _winQueueCache;
+    if (queue == null || queue.isEmpty) {
+      queue = await _ensureWindowsQueue();
+      if (queue != null) _winQueueCache = queue;
     }
-    return _sendWindowsPs(bytes);
+    if (queue == null || queue.isEmpty) {
+      // Sozlash skripti ishlamadi — eski PowerShell yo'liga tushamiz.
+      return _sendWindowsPs(bytes);
+    }
+
+    var err = _win32RawPrint(queue, bytes);
+    if (err != null && cfgName.isEmpty) {
+      // Kesh eskirgan bo'lishi mumkin (printer o'chirilgan) — qayta aniqlaymiz.
+      debugPrint('[PrinterService] win32 ffi: $err — navbat qayta aniqlanadi');
+      _winQueueCache = null;
+      final fresh = await _ensureWindowsQueue();
+      if (fresh != null && fresh != queue) {
+        queue = fresh;
+        _winQueueCache = fresh;
+        err = _win32RawPrint(queue, bytes);
+      }
+    }
+    if (err != null) {
+      debugPrint('[PrinterService] win32 ffi: $err');
+      return cfgName.isNotEmpty
+          ? PrintReport(PrintOutcome.failed, err)
+          : _sendWindowsPs(bytes);
+    }
+
+    // Hujjat haqiqatan chiqdimi? Tiqilib qolsa — o'lik port.
+    var stuck = await _winQueueStuck(queue);
+    if (stuck == 0) {
+      return PrintReport(PrintOutcome.printed, 'Chek chop etildi → $queue');
+    }
+    if (cfgName.isEmpty) {
+      // Avto-davolash: navbatni boshqa jonli USB portga o'tkazib qayta urinish
+      // (mijoz kassasidagi "USB001 o'lik, USB002 jonli" holati).
+      final newPort = await _healWindowsQueue(queue);
+      if (newPort != null) {
+        err = _win32RawPrint(queue, bytes);
+        if (err == null) {
+          stuck = await _winQueueStuck(queue);
+          if (stuck == 0) {
+            return PrintReport(PrintOutcome.printed,
+                'Chek chop etildi → $queue ($newPort portga o\'tkazildi)');
+          }
+        }
+      }
+    }
+    return PrintReport(
+        PrintOutcome.failed,
+        "'$queue' navbatida hujjat TIQILIB qoldi — printer bu portga "
+        'ulanmagan. USB kabelni tekshiring yoki Sozlamalarda ISHLAYDIGAN '
+        'printer nomini kiriting.');
+  }
+
+  /// PowerShell skriptni vaqtinchalik .ps1 (UTF-8 BOM) orqali ishga tushiradi.
+  Future<String?> _runPs(String script,
+      {Map<String, String> env = const {},
+      Duration timeout = const Duration(seconds: 25)}) async {
+    try {
+      final tmp = Directory.systemTemp.path;
+      final ps1 =
+          '$tmp\\aiba-ps-${DateTime.now().microsecondsSinceEpoch}.ps1';
+      await File(ps1).writeAsBytes(
+          [0xEF, 0xBB, 0xBF, ...utf8.encode(script)],
+          flush: true);
+      try {
+        final res = await Process.run(
+          'powershell',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
+          environment: env,
+        ).timeout(timeout);
+        if (res.exitCode != 0) {
+          debugPrint('[PrinterService] ps: ${res.stderr}');
+          return null;
+        }
+        return res.stdout.toString();
+      } finally {
+        try {
+          await File(ps1).delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('[PrinterService] ps exception: $e');
+      return null;
+    }
+  }
+
+  /// Ishonchli RAW navbatni topadi yoki O'ZI O'RNATADI — natija navbat nomi.
+  /// Ustuvorlik: mavjud Generic/Text Only navbat → chek-printerning portiga
+  /// 'AIBA Chek Printer' (Generic/Text Only) yaratish/tuzatish.
+  Future<String?> _ensureWindowsQueue() async {
+    final out = await _runPs(_winEnsureQueueScript);
+    if (out == null) return null;
+    final m = RegExp(r'AIBA-QUEUE: ([^\r\n]+)').firstMatch(out);
+    final name = m?.group(1)?.trim();
+    if (name != null && name.isNotEmpty) {
+      debugPrint('[PrinterService] windows navbat: $name');
+      return name;
+    }
+    return null;
+  }
+
+  /// 2 soniyadan keyin navbatdagi hujjatlar soni (0 = chiqib ketdi).
+  /// Tiqilganlarini o'chirib ham yuboradi — keyingi urinishlarga xalaqit
+  /// bermasin.
+  Future<int> _winQueueStuck(String queue) async {
+    final out = await _runPs(r'''
+Start-Sleep -Milliseconds 2000
+$j = @(Get-PrintJob -PrinterName $env:AIBA_Q -ErrorAction SilentlyContinue)
+if ($j.Count -gt 0) {
+  $j | Remove-PrintJob -ErrorAction SilentlyContinue
+}
+Write-Output ("AIBA-STUCK: " + $j.Count)
+''', env: {'AIBA_Q': queue});
+    if (out == null) return 0; // tekshirib bo'lmadi — muvaffaqiyat deb olamiz
+    final m = RegExp(r'AIBA-STUCK: (\d+)').firstMatch(out);
+    return int.tryParse(m?.group(1) ?? '0') ?? 0;
+  }
+
+  /// Navbatni boshqa jonli USB/ESDPRT portga o'tkazadi (faqat Generic/Text
+  /// Only drayverli navbat uchun). Natija — yangi port nomi yoki null.
+  Future<String?> _healWindowsQueue(String queue) async {
+    final out = await _runPs(r'''
+$q = Get-Printer -Name $env:AIBA_Q -ErrorAction SilentlyContinue
+if ($q -eq $null) { exit 1 }
+if ($q.DriverName -notmatch 'Generic') { exit 1 }
+$ports = @(Get-PrinterPort -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -match '^(USB\d|ESDPRT)' -and $_.Name -ne $q.PortName } |
+  ForEach-Object { $_.Name })
+if ($ports.Count -eq 0) { exit 1 }
+Set-Printer -Name $env:AIBA_Q -PortName $ports[0] -ErrorAction Stop
+Write-Output ("AIBA-PORT: " + $ports[0])
+''', env: {'AIBA_Q': queue});
+    if (out == null) return null;
+    return RegExp(r'AIBA-PORT: ([^\r\n]+)').firstMatch(out)?.group(1)?.trim();
   }
 
   Future<PrintReport> _sendWindowsPs(List<int> bytes) async {
@@ -332,6 +457,52 @@ class PrinterService {
       return PrintReport(PrintOutcome.failed, 'Chop etish xatosi: $e');
     }
   }
+
+  // Ishonchli RAW navbatni topish/o'rnatish skripti. Drayverli navbatlar
+  // (masalan XP-80C) RAW baytlarni ba'zan yutib yuboradi yoki o'lik portda
+  // turadi — shuning uchun Generic/Text Only navbat afzal, bo'lmasa chek
+  // printerning portiga o'zimiz yaratamiz. Bir marta ishlaydi, natija
+  // keshlanadi.
+  static const String _winEnsureQueueScript = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$virtual = 'Print to PDF|XPS|OneNote|Fax|AnyDesk|PDF24|Foxit|Adobe PDF'
+$all = @(Get-CimInstance -Class Win32_Printer | Where-Object { ($_.Name + ' ' + $_.DriverName) -notmatch $virtual })
+# 1) Tayyor Generic / Text Only navbat bormi? (AIBARAW, AIBA Chek Printer...)
+$gen = @($all | Where-Object { $_.DriverName -match 'Generic' } |
+  Sort-Object -Property @{Expression={$_.Name -match 'AIBA'};Descending=$true},
+                        @{Expression={$_.Default};Descending=$true})
+if ($gen.Count -gt 0) { Write-Output ("AIBA-QUEUE: " + $gen[0].Name); exit 0 }
+# 2) Chek printerga o'xshagan printerning PORTINI olamiz.
+$kw = 'POS|THERM|RECEIPT|CHEK|AIBA|XPRINTER|XP-|RONGTA|RP-|TM-|GP-|GOOJPRT|SEWOO|BIXOLON|CITIZEN|ZYWELL|HOIN|OCPP|(^|[^0-9])(58|80)([^0-9]|$)'
+$usbPort = '^(USB|ESDPRT|POS)'
+$cand = @($all | Where-Object { ($_.Name + ' ' + $_.DriverName) -match $kw } |
+  Sort-Object -Property @{Expression={$_.Default};Descending=$true},
+                        @{Expression={-not $_.WorkOffline};Descending=$true},
+                        @{Expression={$_.PortName -match $usbPort};Descending=$true})
+if ($cand.Count -eq 0) { $cand = @($all | Where-Object { $_.PortName -match $usbPort }) }
+if ($cand.Count -eq 0) { $cand = @($all | Where-Object { $_.Default }) }
+$port = $null
+if ($cand.Count -gt 0) { $port = $cand[0].PortName }
+if ($port -eq $null) {
+  $p = @(Get-PrinterPort | Where-Object { $_.Name -match '^(USB\d|ESDPRT)' }) | Select-Object -First 1
+  if ($p -ne $null) { $port = $p.Name }
+}
+if ($port -eq $null) { exit 1 }
+# 3) Shu portga Generic / Text Only navbat yaratamiz (bor bo'lsa portini tuzatamiz).
+$ErrorActionPreference = 'Stop'
+try {
+  if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) {
+    Add-PrinterDriver -Name 'Generic / Text Only'
+  }
+  $exist = Get-Printer -Name 'AIBA Chek Printer' -ErrorAction SilentlyContinue
+  if ($exist -eq $null) {
+    Add-Printer -Name 'AIBA Chek Printer' -DriverName 'Generic / Text Only' -PortName $port
+  } elseif ($exist.PortName -ne $port) {
+    Set-Printer -Name 'AIBA Chek Printer' -PortName $port
+  }
+  Write-Output "AIBA-QUEUE: AIBA Chek Printer"
+} catch { exit 1 }
+''';
 
   // PowerShell RAW-print skripti. C# RawPrinterHelper winspool.drv orqali
   // StartDocPrinter(RAW) + WritePrinter qiladi — ESC/POS baytlari xom holicha

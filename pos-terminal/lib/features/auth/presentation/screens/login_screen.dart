@@ -259,34 +259,45 @@ class _RightPanel extends StatelessWidget {
       color: const Color(0xFF0C0C0E),
       child: Stack(
         children: [
-          // 1) Kontent — eng ostida (toast/gear ustдан bosilsин deб).
-          SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(28, 96, 28, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _AppIcon(size: 64),
-                const SizedBox(height: 16),
-                const Text('AIBA',
-                    style: TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w800, letterSpacing: 1)),
-                const SizedBox(height: 4),
-                const Text('POS system', style: TextStyle(color: Color(0xFF9AA0A6), fontSize: 16)),
-                const SizedBox(height: 40),
-                _PinDots(length: pin.length, error: error != null),
-                const SizedBox(height: 40),
-                _Keypad(onDigit: onDigit, onBackspace: onBackspace),
-                const SizedBox(height: 8),
-                // Yuklanish holati — PIN to'lgach avto-kirishda ko'rinadi.
-                SizedBox(
-                  height: 24,
-                  child: loading
-                      ? const SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2AA9E0)),
-                        )
-                      : null,
+          // 1) Kontent — eng ostida (toast/gear ustidan bosilsin deb).
+          // FittedBox: oyna past bo'lsa (kichik noutbuk/kassa ekrani) butun
+          // panel proporsional KICHRAYADI — 0 va backspace qatori hech qachon
+          // kesilib qolmaydi (avval pastki qator ko'rinmay qolardi).
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: SizedBox(
+                  width: 436,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const _AppIcon(size: 64),
+                      const SizedBox(height: 16),
+                      const Text('AIBA',
+                          style: TextStyle(color: Colors.white, fontSize: 44, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                      const SizedBox(height: 4),
+                      const Text('POS system', style: TextStyle(color: Color(0xFF9AA0A6), fontSize: 16)),
+                      const SizedBox(height: 36),
+                      _PinDots(length: pin.length, error: error != null),
+                      const SizedBox(height: 36),
+                      _Keypad(onDigit: onDigit, onBackspace: onBackspace),
+                      const SizedBox(height: 8),
+                      // Yuklanish holati — PIN to'lgach avto-kirishda ko'rinadi.
+                      SizedBox(
+                        height: 24,
+                        child: loading
+                            ? const SizedBox(
+                                width: 20, height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2AA9E0)),
+                              )
+                            : null,
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
           // Xato toasti — eng ustда (X bosilsin).

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../core/providers/core_providers.dart';
 import '../../../../core/utils/money.dart';
 import '../../../../core/utils/thousands_formatter.dart';
 import '../../../../core/widgets/pos_chrome.dart';
@@ -136,7 +137,24 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
   Future<void> _printZReport(Shift z) async {
     try {
       final ses = ref.read(sessionProvider);
+      // Smenada sotilgan mahsulotlar — Z-chekdagi "Sotilganlar" bo'limi.
+      // Xato bo'lsa ham chek chiqaveradi (ro'yxatsiz).
+      var items = const <ZItem>[];
+      try {
+        final res = await ref.read(dioClientProvider).get(
+            '/api/v2/pos-terminal/reports/top-products?shift_id=${z.id}&limit=100');
+        final list =
+            ((res.data is Map ? res.data['items'] : null) as List?) ?? const [];
+        items = list
+            .map((e) => ZItem(
+                  name: ((e as Map)['name'] ?? '').toString(),
+                  qty: num.tryParse('${e['qty']}') ?? 0,
+                  amount: num.tryParse('${e['amount']}') ?? 0,
+                ))
+            .toList();
+      } catch (_) {}
       final bytes = await ReceiptBuilder.buildZReport(
+        items: items,
         restaurantName: ses?.restaurant.name ?? 'AIBA',
         shiftName: _shiftName(z.openedAt),
         staffName: ses?.staff.name,
