@@ -188,6 +188,9 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<int> unsyncedCount() => _local.unsyncedCount();
 
   @override
+  Future<void> fiscalize(String orderId) => _remote.fiscalize(orderId);
+
+  @override
   Future<FiscalInfo?> fetchFiscal(String orderId) async {
     try {
       final response = await _remote.fetchOrder(orderId);

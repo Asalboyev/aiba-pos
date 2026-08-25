@@ -131,14 +131,16 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
       _checkout(context, ref, PaymentMethod.qr, qrScan: true);
       return true;
     }
-    // F12 — oxirgi chekni chop etish (mijoz chek so'rasagina).
+    // F12 — oxirgi chekni chop etish (mijoz chek so'rasagina). Naqd chek
+    // fiskal QILINMAGAN bo'ladi — F12 avval uni soliqqa yuboradi (fiscalize),
+    // QR kelgach chop etadi. Fiskal bori esa darhol chiqadi.
     if (k == LogicalKeyboardKey.f12) {
       final rec = _lastReceipt;
       final res = _lastResult;
       if (rec != null && res != null) {
         _toast(context, 'Chek chop etilmoqda...');
         // ignore: unawaited_futures
-        _printFresh(context, ref, rec, res);
+        _fiscalizeAndPrint(context, ref, rec, res);
       } else {
         _toast(context, 'Hali chek yo\'q');
       }
@@ -456,6 +458,37 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     posSearchFocusNode.requestFocus();
   }
 
+  /// F12: fiskal hali yo'q bo'lsa (naqd chek — talab bo'yicha) avval serverda
+  /// fiscalize chaqiriladi, QR tayyor bo'lguncha (maks ~15s) kutiladi, keyin
+  /// chek QR bilan chop etiladi. Fiskal bori — darhol chop etiladi.
+  Future<void> _fiscalizeAndPrint(BuildContext context, WidgetRef ref,
+      ReceiptData receipt, CheckoutResult result) async {
+    var r = result;
+    final s0 = r.fiscal?.status.toLowerCase();
+    final ready = s0 == 'sent' || s0 == 'success';
+    if (!ready && r.synced && r.orderId != null) {
+      final repo = ref.read(ordersRepositoryProvider);
+      try {
+        await repo.fiscalize(r.orderId!);
+      } catch (_) {
+        // Server eski bo'lsa (endpoint yo'q) — shunchaki mavjud holat bilan
+        // chop etiladi.
+      }
+      for (var i = 0; i < 15; i++) {
+        final f = await repo.fetchFiscal(r.orderId!);
+        if (f != null) {
+          r = r.copyWith(fiscal: f);
+          final s = f.status.toLowerCase();
+          if (s == 'sent' || s == 'success' || s == 'failed') break;
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      _lastResult = r;
+    }
+    if (!context.mounted) return;
+    await _printFresh(context, ref, receipt, r);
+  }
+
   /// Chekni serverdagi eng yangi sozlamalar (logo, header/footer) bilan chop
   /// etadi. Muvaffaqiyatli chiqsa jim; muammo bo'lsa xabar ko'rsatiladi.
   Future<void> _printFresh(BuildContext context, WidgetRef ref,
@@ -500,9 +533,9 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     }
   }
 
-  /// Naqd to'lov: chek DARHOL chop etiladi, fiskal QRsiz (fiskal baribir
-  /// soliqqa fonda ketadi — bu faqat qog'oz ko'rinishi). Mijoz to'liq chek
-  /// so'rasa kassir F12 bosadi (QR bilan chiqadi).
+  /// Naqd to'lov: chek DARHOL chop etiladi, fiskal QRsiz. Naqd chek soliqqa
+  /// YUBORILMAYDI (talab bo'yicha) — mijoz chek so'rasa kassir F12 bosadi:
+  /// shunda fiscalize chaqirilib QR bilan chiqadi.
   Future<void> _printNoQrReceipt(
       BuildContext context, WidgetRef ref, ReceiptData receipt) async {
     final noQr = ReceiptData(

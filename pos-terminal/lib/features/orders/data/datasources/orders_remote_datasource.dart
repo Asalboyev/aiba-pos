@@ -13,6 +13,13 @@ class OrdersRemoteDataSource {
     return res.data ?? const {};
   }
 
+  /// POST /orders/{id}/fiscalize — NAQD chekni talab bo'yicha fiskal qilish
+  /// (mijoz chek so'radi, kassir F12 bosdi). Server navbatga qo'yadi.
+  Future<void> fiscalize(String orderId) async {
+    await _client
+        .post<Map<String, dynamic>>('/api/v2/pos-terminal/orders/$orderId/fiscalize');
+  }
+
   /// GET /api/v2/orders/{id} — re-fetch after checkout to see if the fiscal
   /// receipt has transitioned from `pending` to `sent`.
   Future<Map<String, dynamic>> fetchOrder(String orderId) async {

@@ -20,4 +20,7 @@ abstract class OrdersRepository {
   /// Re-fetch fiscal info for an order (used to poll after checkout while the
   /// backend celery worker is registering the cheque with the OFD).
   Future<FiscalInfo?> fetchFiscal(String orderId);
+
+  /// Naqd chekni talab bo'yicha fiskal qilish (F12) — server navbatga qo'yadi.
+  Future<void> fiscalize(String orderId);
 }
