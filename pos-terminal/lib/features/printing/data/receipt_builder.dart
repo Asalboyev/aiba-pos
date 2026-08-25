@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:esc_pos_utils_plus/esc_pos_utils.dart';
 import 'package:image/image.dart' as img;
 
@@ -15,6 +17,67 @@ import '../domain/receipt_data.dart';
 class ReceiptBuilder {
   // Font A da bir qatorga sig'adigan belgilar: 58mm → 32, 80mm → 48.
   static int _cols(int paperWidth) => paperWidth == 58 ? 32 : 48;
+
+  // ── Matn kodlash ───────────────────────────────────────────────────────────
+  // Generator.text() Latin-1 ga kodlaydi va KIRILL harflar yoki tipografik
+  // belgilar («—», «’») uchrasa EXCEPTION otadi — chek umuman chiqmasdi.
+  // Yechim: belgilarni tozalab, CP866 (kirill kodlash, ESC t 17) bilan
+  // baytlarga o'girib textEncoded orqali yuboramiz. Har belgi = 1 bayt,
+  // shuning uchun ustun tekislash (padding) matematikasi buzilmaydi.
+
+  /// ESC t 17 — CP866 kod jadvalini tanlash (Xprinter/ESC-POS standarti).
+  static const cp866Select = [0x1B, 0x74, 0x11];
+
+  static const Map<String, String> _replace = {
+    '—': '-', '–': '-', '―': '-',
+    '‘': "'", '’': "'", '‚': "'", 'ʻ': "'", 'ʼ': "'",
+    '“': '"', '”': '"', '„': '"', '«': '"', '»': '"',
+    '…': '...', '·': '*', '•': '*', '№': 'No', '×': 'x',
+    '✓': '+', '⟳': '@', ' ': ' ',
+    'қ': 'k', 'Қ': 'K', 'ғ': 'g', 'Ғ': 'G', 'ҳ': 'h', 'Ҳ': 'H',
+  };
+
+  static String _sanitize(String s) {
+    final b = StringBuffer();
+    for (final ch in s.split('')) {
+      b.write(_replace[ch] ?? ch);
+    }
+    return b.toString();
+  }
+
+  /// CP866 kodlash: ASCII o'z holicha, kirill — jadval bo'yicha, qolgan
+  /// nstandart belgi '?' bo'ladi (exception YO'Q — chek doim chiqadi).
+  static Uint8List _enc(String s) {
+    final out = <int>[];
+    for (final r in _sanitize(s).runes) {
+      if (r < 0x80) {
+        out.add(r);
+      } else if (r >= 0x410 && r <= 0x42F) {
+        out.add(0x80 + (r - 0x410)); // А-Я
+      } else if (r >= 0x430 && r <= 0x43F) {
+        out.add(0xA0 + (r - 0x430)); // а-п
+      } else if (r >= 0x440 && r <= 0x44F) {
+        out.add(0xE0 + (r - 0x440)); // р-я
+      } else if (r == 0x401) {
+        out.add(0xF0); // Ё
+      } else if (r == 0x451) {
+        out.add(0xF1); // ё
+      } else if (r == 0x40E) {
+        out.add(0xF6); // Ў
+      } else if (r == 0x45E) {
+        out.add(0xF7); // ў
+      } else {
+        out.add(0x3F); // ?
+      }
+    }
+    return Uint8List.fromList(out);
+  }
+
+  /// _tx(g, ) o'rnini bosuvchi XAVFSIZ chiqarish (CP866, exception'siz).
+  static List<int> _tx(Generator g, String text,
+      {PosStyles styles = const PosStyles()}) {
+    return g.textEncoded(_enc(text), styles: styles);
+  }
 
   // ── to'liq stillar (har chaqiriqda hammasi aniq ko'rsatiladi) ──────────────
   static const _normal = PosStyles(
@@ -120,6 +183,7 @@ class ReceiptBuilder {
     final thick = '=' * cols;
 
     bytes.addAll(g.reset());
+    bytes.addAll(cp866Select);
 
     // ── TO'LOV KODI cheki (1-chek) ────────────────────────────────────────────
     // Mijoz skanerlab to'laydigan chek. Fiskal EMAS — to'lov o'tgach ikkinchi,
@@ -127,10 +191,10 @@ class ReceiptBuilder {
     final payQr = data.paymentQrUrl;
     final isPaySlip = payQr != null && payQr.isNotEmpty;
     if (isPaySlip) {
-      bytes.addAll(g.text('=' * cols, styles: _normal));
-      bytes.addAll(g.text('TO\'LOV UCHUN', styles: _title));
-      bytes.addAll(g.text('FISKAL CHEK EMAS', styles: _centerBold));
-      bytes.addAll(g.text('=' * cols, styles: _normal));
+      bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+      bytes.addAll(_tx(g, 'TO\'LOV UCHUN', styles: _title));
+      bytes.addAll(_tx(g, 'FISKAL CHEK EMAS', styles: _centerBold));
+      bytes.addAll(_tx(g, '=' * cols, styles: _normal));
       bytes.addAll(g.feed(1));
     }
 
@@ -139,16 +203,16 @@ class ReceiptBuilder {
     // ko'rgan odam (tekshiruvchi/buxgalter) darhol farqlaydi.
     if (data.isErrorCheck) {
       final no = (data.orderNumber ?? '').replaceAll('#', '');
-      bytes.addAll(g.text('*' * cols, styles: _normal));
-      bytes.addAll(g.text('XATO CHEK', styles: _title));
+      bytes.addAll(_tx(g, '*' * cols, styles: _normal));
+      bytes.addAll(_tx(g, 'XATO CHEK', styles: _title));
       if (no.isNotEmpty) {
-        bytes.addAll(g.text('CHEK RAQAMI: $no', styles: _centerBold));
+        bytes.addAll(_tx(g, 'CHEK RAQAMI: $no', styles: _centerBold));
       }
       if ((data.errorReason ?? '').isNotEmpty) {
-        bytes.addAll(g.text('Sabab: ${data.errorReason}', styles: _center));
+        bytes.addAll(_tx(g, 'Sabab: ${data.errorReason}', styles: _center));
       }
-      bytes.addAll(g.text('BU CHEK HISOBGA OLINMAYDI', styles: _centerBold));
-      bytes.addAll(g.text('*' * cols, styles: _normal));
+      bytes.addAll(_tx(g, 'BU CHEK HISOBGA OLINMAYDI', styles: _centerBold));
+      bytes.addAll(_tx(g, '*' * cols, styles: _normal));
       bytes.addAll(g.feed(1));
     } else if ((data.replacesErrorNumber ?? '').isNotEmpty) {
       // To'g'irlangan chek. Raqam xato chek bilan BIR XIL bo'lsa (odatiy
@@ -156,14 +220,14 @@ class ReceiptBuilder {
       // qaysi chek o'rniga ekani ham yoziladi.
       final same = (data.replacesErrorNumber ?? '') ==
           (data.orderNumber ?? '').replaceAll('#', '');
-      bytes.addAll(g.text('=' * cols, styles: _normal));
-      bytes.addAll(g.text('TO\'G\'IRLANGAN CHEK', styles: _title));
-      bytes.addAll(g.text(
+      bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+      bytes.addAll(_tx(g, 'TO\'G\'IRLANGAN CHEK', styles: _title));
+      bytes.addAll(_tx(g, 
           same
               ? 'Oldingi urinish XATO — shu chek to\'g\'ri'
               : 'XATO CHEK № ${data.replacesErrorNumber} o\'rniga',
           styles: _centerBold));
-      bytes.addAll(g.text('=' * cols, styles: _normal));
+      bytes.addAll(_tx(g, '=' * cols, styles: _normal));
       bytes.addAll(g.feed(1));
     }
 
@@ -182,30 +246,30 @@ class ReceiptBuilder {
       }
     }
 
-    bytes.addAll(g.text(data.restaurantName, styles: _title));
+    bytes.addAll(_tx(g, data.restaurantName, styles: _title));
     if ((data.legalName ?? '').isNotEmpty && data.legalName != data.restaurantName) {
-      bytes.addAll(g.text(data.legalName!, styles: _center));
+      bytes.addAll(_tx(g, data.legalName!, styles: _center));
     }
     if ((data.inn ?? '').isNotEmpty) {
-      bytes.addAll(g.text('INN: ${data.inn}', styles: _center));
+      bytes.addAll(_tx(g, 'INN: ${data.inn}', styles: _center));
     }
     if ((data.address ?? '').isNotEmpty) {
       for (final l in _wrap(data.address!, cols)) {
-        bytes.addAll(g.text(l, styles: _center));
+        bytes.addAll(_tx(g, l, styles: _center));
       }
     }
     if ((data.phone ?? '').isNotEmpty) {
-      bytes.addAll(g.text('Tel: ${data.phone}', styles: _center));
+      bytes.addAll(_tx(g, 'Tel: ${data.phone}', styles: _center));
     }
     if ((data.header ?? '').isNotEmpty) {
-      bytes.addAll(g.text(data.header!, styles: _centerBold));
+      bytes.addAll(_tx(g, data.header!, styles: _centerBold));
     }
 
-    bytes.addAll(g.text(thin, styles: _normal));
+    bytes.addAll(_tx(g, thin, styles: _normal));
 
     // Chek raqami katta — mijoz navbatini shu raqam bilan kutadi.
     if (data.orderNumber != null) {
-      bytes.addAll(g.text('Chek #${data.orderNumber}',
+      bytes.addAll(_tx(g, 'Chek #${data.orderNumber}',
           styles: const PosStyles(
             align: PosAlign.center,
             bold: true,
@@ -214,17 +278,17 @@ class ReceiptBuilder {
             fontType: PosFontType.fontA,
           )));
     }
-    bytes.addAll(g.text(
+    bytes.addAll(_tx(g, 
       _pair(data.terminalName ?? '', _formatDate(data.createdAt), cols),
       styles: _normal,
     ));
 
-    bytes.addAll(g.text(thick, styles: _normal));
+    bytes.addAll(_tx(g, thick, styles: _normal));
 
     // ── Mahsulotlar ───────────────────────────────────────────────────────────
     for (final item in data.items) {
       for (final l in _wrap(item.name, cols)) {
-        bytes.addAll(g.text(l,
+        bytes.addAll(_tx(g, l,
             styles: const PosStyles(
               align: PosAlign.left,
               bold: true,
@@ -233,55 +297,55 @@ class ReceiptBuilder {
               fontType: PosFontType.fontA,
             )));
       }
-      bytes.addAll(g.text(
+      bytes.addAll(_tx(g, 
         _pair('  ${_qty(item.qty)} x ${Money.format(item.price)}',
             Money.format(item.lineTotal), cols),
         styles: _normal,
       ));
       if (data.showMxik && (item.mxikCode ?? '').isNotEmpty) {
-        bytes.addAll(g.text('  MXIK: ${item.mxikCode}', styles: _smallLeft));
+        bytes.addAll(_tx(g, '  MXIK: ${item.mxikCode}', styles: _smallLeft));
       }
     }
 
-    bytes.addAll(g.text(thin, styles: _normal));
+    bytes.addAll(_tx(g, thin, styles: _normal));
 
     // ── Jami ──────────────────────────────────────────────────────────────────
-    bytes.addAll(g.text(_pair('Oraliq', Money.format(data.subtotal), cols),
+    bytes.addAll(_tx(g, _pair('Oraliq', Money.format(data.subtotal), cols),
         styles: _normal));
     if (data.discount > 0) {
-      bytes.addAll(g.text(_pair('Chegirma', '-${Money.format(data.discount)}', cols),
+      bytes.addAll(_tx(g, _pair('Chegirma', '-${Money.format(data.discount)}', cols),
           styles: _normal));
     }
-    bytes.addAll(g.text(_pair('JAMI', Money.formatSom(data.total), cols),
+    bytes.addAll(_tx(g, _pair('JAMI', Money.formatSom(data.total), cols),
         styles: _big));
 
-    bytes.addAll(g.text(thin, styles: _normal));
+    bytes.addAll(_tx(g, thin, styles: _normal));
 
     // ── To'lovlar ─────────────────────────────────────────────────────────────
     for (final p in data.payments) {
-      bytes.addAll(g.text(_pair(p.label, Money.format(p.amount), cols),
+      bytes.addAll(_tx(g, _pair(p.label, Money.format(p.amount), cols),
           styles: _normal));
     }
 
     if (data.hasMxik) {
-      bytes.addAll(g.text('Tovarlar MXIK kodlari bilan fiskalizatsiya qilindi',
+      bytes.addAll(_tx(g, 'Tovarlar MXIK kodlari bilan fiskalizatsiya qilindi',
           styles: _small));
     }
 
     // ── TO'LOV KODI QR (1-chek) — mijoz shu QR'ni skanerlab to'laydi ─────────
     if (isPaySlip) {
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text('TO\'LOV KODI', styles: _title));
+      bytes.addAll(_tx(g, 'TO\'LOV KODI', styles: _title));
       bytes.addAll(g.qrcode(payQr,
           size: data.paperWidth == 58 ? QRSize.Size6 : QRSize.Size7));
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text('Payme / Click / Uzum bilan skanerlab to\'lang',
+      bytes.addAll(_tx(g, 'Payme / Click / Uzum bilan skanerlab to\'lang',
           styles: _center));
-      bytes.addAll(g.text('To\'lovdan so\'ng fiskal chek avtomatik chiqadi',
+      bytes.addAll(_tx(g, 'To\'lovdan so\'ng fiskal chek avtomatik chiqadi',
           styles: _small));
       if ((data.footer ?? '').isNotEmpty) {
         bytes.addAll(g.feed(1));
-        bytes.addAll(g.text(data.footer!, styles: _center));
+        bytes.addAll(_tx(g, data.footer!, styles: _center));
       }
       bytes.addAll(g.feed(2));
       bytes.addAll(g.cut());
@@ -292,22 +356,22 @@ class ReceiptBuilder {
     final qr = data.fiscal?.qrUrl;
     if (data.showQr && qr != null && qr.isNotEmpty) {
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text('Soliq cheki (QR)', styles: _centerBold));
+      bytes.addAll(_tx(g, 'Soliq cheki (QR)', styles: _centerBold));
       bytes.addAll(g.qrcode(qr,
           size: data.paperWidth == 58 ? QRSize.Size5 : QRSize.Size6));
       if ((data.fiscal?.fiscalSign ?? '').isNotEmpty) {
         bytes.addAll(g.feed(1));
-        bytes.addAll(g.text('FP: ${data.fiscal!.fiscalSign}', styles: _small));
+        bytes.addAll(_tx(g, 'FP: ${data.fiscal!.fiscalSign}', styles: _small));
       }
     } else if (data.fiscal != null && !data.fiscal!.isSuccess) {
       bytes.addAll(g.feed(1));
       bytes.addAll(
-          g.text('Fiskalizatsiya: ${data.fiscal!.status}', styles: _center));
+          _tx(g, 'Fiskalizatsiya: ${data.fiscal!.status}', styles: _center));
     }
 
     if ((data.footer ?? '').isNotEmpty) {
       bytes.addAll(g.feed(1));
-      bytes.addAll(g.text(data.footer!, styles: _centerBold));
+      bytes.addAll(_tx(g, data.footer!, styles: _centerBold));
     }
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
@@ -330,17 +394,18 @@ class ReceiptBuilder {
     final g = Generator(paperSize, profile);
     final bytes = <int>[];
     bytes.addAll(g.reset());
-    bytes.addAll(g.text('QR ORQALI TO\'LOV', styles: _title));
-    bytes.addAll(g.text(_formatDate(DateTime.now()), styles: _center));
-    bytes.addAll(g.text('-' * _cols(paperWidth), styles: _normal));
-    bytes.addAll(g.text('Summa: ${Money.formatSom(amount)}', styles: _big));
+    bytes.addAll(cp866Select);
+    bytes.addAll(_tx(g, 'QR ORQALI TO\'LOV', styles: _title));
+    bytes.addAll(_tx(g, _formatDate(DateTime.now()), styles: _center));
+    bytes.addAll(_tx(g, '-' * _cols(paperWidth), styles: _normal));
+    bytes.addAll(_tx(g, 'Summa: ${Money.formatSom(amount)}', styles: _big));
     bytes.addAll(g.feed(1));
     bytes.addAll(g.qrcode(url,
         size: paperWidth == 58 ? QRSize.Size6 : QRSize.Size7));
     bytes.addAll(g.feed(1));
-    bytes.addAll(g.text('Payme / Click / Uzum bilan skanerlab to\'lang',
+    bytes.addAll(_tx(g, 'Payme / Click / Uzum bilan skanerlab to\'lang',
         styles: _center));
-    bytes.addAll(g.text('To\'lovdan so\'ng chek avtomatik chiqadi',
+    bytes.addAll(_tx(g, 'To\'lovdan so\'ng chek avtomatik chiqadi',
         styles: _small));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
@@ -379,42 +444,43 @@ class ReceiptBuilder {
     }
 
     bytes.addAll(g.reset());
-    bytes.addAll(g.text('Z-HISOBOT', styles: _title));
-    bytes.addAll(g.text(restaurantName, styles: _centerBold));
-    if (shiftName.isNotEmpty) bytes.addAll(g.text(shiftName, styles: _center));
+    bytes.addAll(cp866Select);
+    bytes.addAll(_tx(g, 'Z-HISOBOT', styles: _title));
+    bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
+    if (shiftName.isNotEmpty) bytes.addAll(_tx(g, shiftName, styles: _center));
     if (openedAt != null) {
       bytes.addAll(
-          g.text(row('Ochilgan:', _formatDate(openedAt.toLocal())), styles: _normal));
+          _tx(g, row('Ochilgan:', _formatDate(openedAt.toLocal())), styles: _normal));
     }
-    bytes.addAll(g.text(
+    bytes.addAll(_tx(g, 
         row('Yopilgan:', _formatDate((closedAt ?? DateTime.now()).toLocal())),
         styles: _normal));
     if (staffName != null && staffName.isNotEmpty) {
-      bytes.addAll(g.text(row('Yopdi:', staffName), styles: _normal));
+      bytes.addAll(_tx(g, row('Yopdi:', staffName), styles: _normal));
     }
-    bytes.addAll(g.text('-' * cols, styles: _normal));
-    bytes.addAll(g.text(row('Buyurtmalar', '$ordersCount ta'), styles: _normal));
+    bytes.addAll(_tx(g, '-' * cols, styles: _normal));
+    bytes.addAll(_tx(g, row('Buyurtmalar', '$ordersCount ta'), styles: _normal));
     bytes.addAll(
-        g.text(row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _bold));
-    bytes.addAll(g.text('-' * cols, styles: _normal));
-    bytes.addAll(g.text(row('Naqd', Money.formatSom(cash)), styles: _normal));
-    bytes.addAll(g.text(row('Karta', Money.formatSom(card)), styles: _normal));
-    bytes.addAll(g.text(row('Click', Money.formatSom(click)), styles: _normal));
-    bytes.addAll(g.text(row('Uzum', Money.formatSom(uzum)), styles: _normal));
+        _tx(g, row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _bold));
+    bytes.addAll(_tx(g, '-' * cols, styles: _normal));
+    bytes.addAll(_tx(g, row('Naqd', Money.formatSom(cash)), styles: _normal));
+    bytes.addAll(_tx(g, row('Karta', Money.formatSom(card)), styles: _normal));
+    bytes.addAll(_tx(g, row('Click', Money.formatSom(click)), styles: _normal));
+    bytes.addAll(_tx(g, row('Uzum', Money.formatSom(uzum)), styles: _normal));
     bytes.addAll(
-        g.text(row('Keldi-ketdi', Money.formatSom(keldi)), styles: _normal));
-    bytes.addAll(g.text('-' * cols, styles: _normal));
-    bytes.addAll(g.text(row('Boshlang\'ich kassa', Money.formatSom(openingCash)),
+        _tx(g, row('Keldi-ketdi', Money.formatSom(keldi)), styles: _normal));
+    bytes.addAll(_tx(g, '-' * cols, styles: _normal));
+    bytes.addAll(_tx(g, row('Boshlang\'ich kassa', Money.formatSom(openingCash)),
         styles: _normal));
     bytes.addAll(
-        g.text(row('Rasxodlar', Money.formatSom(expenses)), styles: _normal));
-    bytes.addAll(g.text(
+        _tx(g, row('Rasxodlar', Money.formatSom(expenses)), styles: _normal));
+    bytes.addAll(_tx(g, 
         row('Kassada naqd', Money.formatSom(openingCash + cash - expenses)),
         styles: _bold));
     bytes.addAll(
-        g.text(row('Xato cheklar', '$errorChecks ta'), styles: _normal));
-    bytes.addAll(g.text('=' * cols, styles: _normal));
-    bytes.addAll(g.text('Smena yopildi', styles: _center));
+        _tx(g, row('Xato cheklar', '$errorChecks ta'), styles: _normal));
+    bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+    bytes.addAll(_tx(g, 'Smena yopildi', styles: _center));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;
@@ -426,19 +492,20 @@ class ReceiptBuilder {
     final g = Generator(paperSize, profile);
     final bytes = <int>[];
     bytes.addAll(g.reset());
-    bytes.addAll(g.text('AIBA POS', styles: _title));
-    bytes.addAll(g.text('Printer test — ${paperWidth}mm rejim', styles: _center));
-    bytes.addAll(g.text(_formatDate(DateTime.now()), styles: _center));
-    bytes.addAll(g.text('-' * _cols(paperWidth), styles: _normal));
+    bytes.addAll(cp866Select);
+    bytes.addAll(_tx(g, 'AIBA POS', styles: _title));
+    bytes.addAll(_tx(g, 'Printer test — ${paperWidth}mm rejim', styles: _center));
+    bytes.addAll(_tx(g, _formatDate(DateTime.now()), styles: _center));
+    bytes.addAll(_tx(g, '-' * _cols(paperWidth), styles: _normal));
     // O'lchagichlar: to'g'ri kenglikda oxirgi belgi o'ng chetga tegib turadi.
-    bytes.addAll(g.text('80mm o\'lchagich (48):', styles: _normal));
-    bytes.addAll(g.text('123456789012345678901234567890123456789012345678',
+    bytes.addAll(_tx(g, '80mm o\'lchagich (48):', styles: _normal));
+    bytes.addAll(_tx(g, '123456789012345678901234567890123456789012345678',
         styles: _normal));
-    bytes.addAll(g.text('58mm o\'lchagich (32):', styles: _normal));
-    bytes.addAll(g.text('12345678901234567890123456789012', styles: _normal));
-    bytes.addAll(g.text('-' * _cols(paperWidth), styles: _normal));
-    bytes.addAll(g.text('Qaysi chiziq chetga tegsa —', styles: _center));
-    bytes.addAll(g.text('adminkada o\'sha kenglikni tanlang.', styles: _center));
+    bytes.addAll(_tx(g, '58mm o\'lchagich (32):', styles: _normal));
+    bytes.addAll(_tx(g, '12345678901234567890123456789012', styles: _normal));
+    bytes.addAll(_tx(g, '-' * _cols(paperWidth), styles: _normal));
+    bytes.addAll(_tx(g, 'Qaysi chiziq chetga tegsa —', styles: _center));
+    bytes.addAll(_tx(g, 'adminkada o\'sha kenglikni tanlang.', styles: _center));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;
