@@ -23,4 +23,10 @@ abstract class OrdersRepository {
 
   /// Naqd chekni talab bo'yicha fiskal qilish (F12) — server navbatga qo'yadi.
   Future<void> fiscalize(String orderId);
+
+  /// Bugungi fiskal qilinmagan naqd cheklar (F12 ro'yxati).
+  Future<List<Map<String, dynamic>>> listUnfiscalized();
+
+  /// Order to'liq detali (items + payments) — chekni qayta chop etish uchun.
+  Future<Map<String, dynamic>> fetchOrderDetail(String orderId);
 }

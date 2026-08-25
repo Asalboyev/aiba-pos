@@ -14,6 +14,7 @@ import '../../../shift/presentation/providers/shift_providers.dart';
 import '../../../printing/data/printer_service.dart';
 import '../../domain/entities/cart.dart';
 import '../../domain/entities/checkout_result.dart';
+import '../../domain/entities/fiscal_info.dart';
 import '../../domain/entities/order_draft.dart';
 import '../../domain/entities/payment_method.dart';
 import '../providers/cart_provider.dart';
@@ -26,6 +27,7 @@ import '../widgets/keldi_ketdi_dialog.dart';
 import '../widgets/payment_dialog.dart';
 import '../widgets/product_grid.dart';
 import '../widgets/qr_pay_dialog.dart';
+import '../widgets/unfiscalized_dialog.dart';
 
 class PosSaleScreen extends ConsumerStatefulWidget {
   const PosSaleScreen({super.key});
@@ -131,19 +133,12 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
       _checkout(context, ref, PaymentMethod.qr, qrScan: true);
       return true;
     }
-    // F12 — oxirgi chekni chop etish (mijoz chek so'rasagina). Naqd chek
-    // fiskal QILINMAGAN bo'ladi — F12 avval uni soliqqa yuboradi (fiscalize),
-    // QR kelgach chop etadi. Fiskal bori esa darhol chiqadi.
+    // F12 — bugungi FISKAL QILINMAGAN naqd cheklar ro'yxati: kassir kerakli
+    // orderni tanlaydi, u soliqqa yuborilib QR bilan chiqadi va ro'yxatdan
+    // o'chadi. (Naqd cheklar avtomatik fiskal QILINMAYDI — talab bo'yicha.)
     if (k == LogicalKeyboardKey.f12) {
-      final rec = _lastReceipt;
-      final res = _lastResult;
-      if (rec != null && res != null) {
-        _toast(context, 'Chek chop etilmoqda...');
-        // ignore: unawaited_futures
-        _fiscalizeAndPrint(context, ref, rec, res);
-      } else {
-        _toast(context, 'Hali chek yo\'q');
-      }
+      // ignore: unawaited_futures
+      _openUnfiscalized(context, ref);
       return true;
     }
     // F11 — oxirgi to'langan chekni XATO deb belgilash.
@@ -458,35 +453,105 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     posSearchFocusNode.requestFocus();
   }
 
-  /// F12: fiskal hali yo'q bo'lsa (naqd chek — talab bo'yicha) avval serverda
-  /// fiscalize chaqiriladi, QR tayyor bo'lguncha (maks ~15s) kutiladi, keyin
-  /// chek QR bilan chop etiladi. Fiskal bori — darhol chop etiladi.
-  Future<void> _fiscalizeAndPrint(BuildContext context, WidgetRef ref,
-      ReceiptData receipt, CheckoutResult result) async {
-    var r = result;
-    final s0 = r.fiscal?.status.toLowerCase();
-    final ready = s0 == 'sent' || s0 == 'success';
-    if (!ready && r.synced && r.orderId != null) {
-      final repo = ref.read(ordersRepositoryProvider);
-      try {
-        await repo.fiscalize(r.orderId!);
-      } catch (_) {
-        // Server eski bo'lsa (endpoint yo'q) — shunchaki mavjud holat bilan
-        // chop etiladi.
-      }
+  /// F12: serverdan fiskal qilinmagan naqd cheklar ro'yxatini olib dialog
+  /// ochadi. Tanlangani [_fiscalizeFromList] orqali fiskal qilinib chop etiladi.
+  Future<void> _openUnfiscalized(BuildContext context, WidgetRef ref) async {
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = await ref.read(ordersRepositoryProvider).listUnfiscalized();
+    } catch (_) {
+      if (context.mounted) _toast(context, 'Server bilan aloqa yo\'q');
+      return;
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => UnfiscalizedDialog(
+        orders: rows,
+        onFiscalize: (o) => _fiscalizeFromList(context, ref, o),
+      ),
+    );
+    posSearchFocusNode.requestFocus();
+  }
+
+  /// Ro'yxatdan tanlangan orderni fiskal qiladi va QR bilan chop etadi.
+  /// true = muvaffaqiyat (qator ro'yxatdan o'chadi).
+  Future<bool> _fiscalizeFromList(
+      BuildContext context, WidgetRef ref, Map<String, dynamic> o) async {
+    final id = o['id'] as String?;
+    if (id == null) return false;
+    final repo = ref.read(ordersRepositoryProvider);
+    try {
+      await repo.fiscalize(id);
+      // QR tayyor bo'lguncha kutamiz (maks ~15s).
+      FiscalInfo? fiscal;
       for (var i = 0; i < 15; i++) {
-        final f = await repo.fetchFiscal(r.orderId!);
-        if (f != null) {
-          r = r.copyWith(fiscal: f);
-          final s = f.status.toLowerCase();
-          if (s == 'sent' || s == 'success' || s == 'failed') break;
+        fiscal = await repo.fetchFiscal(id);
+        final st = fiscal?.status.toLowerCase();
+        if (st == 'sent' || st == 'success') break;
+        if (st == 'failed') {
+          if (context.mounted) {
+            _toast(context,
+                'Fiskal XATO — fiskal modulli kassa ishlayaptimi, tekshiring');
+          }
+          return false;
         }
         await Future.delayed(const Duration(seconds: 1));
       }
-      _lastResult = r;
+      final st = fiscal?.status.toLowerCase();
+      if (st != 'sent' && st != 'success') {
+        if (context.mounted) {
+          _toast(context, 'Fiskal hali tayyor emas — birozdan so\'ng F12');
+        }
+        return false;
+      }
+      // Chek ma'lumotini serverdan olib QR bilan chop etamiz.
+      final d = await repo.fetchOrderDetail(id);
+      final items = ((d['items'] as List?) ?? const [])
+          .map((e) => CartItem(
+                name: '${(e as Map)['name'] ?? ''}',
+                price: num.tryParse('${e['price']}') ?? 0,
+                qty: num.tryParse('${e['qty']}') ?? 1,
+              ))
+          .toList();
+      final payments = ((d['payments'] as List?) ?? const [])
+          .map((e) => Payment(
+                PaymentMethod.fromCode('${(e as Map)['method'] ?? 'cash'}'),
+                num.tryParse('${e['amount']}') ?? 0,
+              ))
+          .toList();
+      final receipt = ReceiptData(
+        restaurantName: ref.read(sessionProvider)?.restaurant.name ?? 'AIBA',
+        terminalName: ref.read(sessionProvider)?.terminal.name,
+        orderNumber: '${d['number'] ?? ''}',
+        items: items,
+        subtotal: num.tryParse('${d['subtotal']}') ?? 0,
+        discount: num.tryParse('${d['discount']}') ?? 0,
+        total: num.tryParse('${d['total']}') ?? 0,
+        payments: payments,
+        fiscal: fiscal,
+        createdAt:
+            DateTime.tryParse('${d['created_at']}')?.toLocal() ?? DateTime.now(),
+        showQr: true,
+        showMxik: false,
+        paperWidth:
+            ref.read(sessionProvider)?.restaurant.receiptPaperWidth ?? 80,
+      );
+      final result = CheckoutResult(
+        clientUuid: '${d['client_uuid'] ?? ''}',
+        synced: true,
+        total: receipt.total,
+        orderId: id,
+        orderNumber: receipt.orderNumber,
+        fiscal: fiscal,
+      );
+      if (!context.mounted) return true;
+      await _printFresh(context, ref, receipt, result);
+      return true;
+    } catch (_) {
+      if (context.mounted) _toast(context, 'Xato — qayta urining');
+      return false;
     }
-    if (!context.mounted) return;
-    await _printFresh(context, ref, receipt, r);
   }
 
   /// Chekni serverdagi eng yangi sozlamalar (logo, header/footer) bilan chop

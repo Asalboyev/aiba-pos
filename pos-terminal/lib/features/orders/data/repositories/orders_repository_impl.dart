@@ -191,6 +191,14 @@ class OrdersRepositoryImpl implements OrdersRepository {
   Future<void> fiscalize(String orderId) => _remote.fiscalize(orderId);
 
   @override
+  Future<List<Map<String, dynamic>>> listUnfiscalized() =>
+      _remote.listUnfiscalized();
+
+  @override
+  Future<Map<String, dynamic>> fetchOrderDetail(String orderId) =>
+      _remote.fetchOrder(orderId);
+
+  @override
   Future<FiscalInfo?> fetchFiscal(String orderId) async {
     try {
       final response = await _remote.fetchOrder(orderId);

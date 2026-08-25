@@ -13,6 +13,15 @@ class OrdersRemoteDataSource {
     return res.data ?? const {};
   }
 
+  /// GET /orders-unfiscalized — bugungi fiskal qilinmagan naqd cheklar
+  /// (F12 ro'yxati): id, number, total, created_at.
+  Future<List<Map<String, dynamic>>> listUnfiscalized() async {
+    final res = await _client
+        .get<Map<String, dynamic>>('/api/v2/pos-terminal/orders-unfiscalized');
+    final items = (res.data?['items'] as List?) ?? const [];
+    return items.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
   /// POST /orders/{id}/fiscalize — NAQD chekni talab bo'yicha fiskal qilish
   /// (mijoz chek so'radi, kassir F12 bosdi). Server navbatga qo'yadi.
   Future<void> fiscalize(String orderId) async {
