@@ -3,9 +3,12 @@
 // byte stream itself is produced by ReceiptBuilder using esc_pos_utils_plus —
 // the output is a plain List<int>, so the two packages interoperate cleanly.
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:esc_pos_printer/esc_pos_printer.dart';
+import 'package:ffi/ffi.dart';
+import 'package:win32/win32.dart' as w32;
 import 'package:esc_pos_utils/esc_pos_utils.dart' as legacy;
 import 'package:flutter/foundation.dart';
 
@@ -187,7 +190,83 @@ class PrinterService {
   /// bo'sh bo'lsa skript o'zi chek-printerni avtomatik aniqlaydi (virtual
   /// printerlar tashlanadi, termal/POS nomlilar afzal). PowerShell'ga kichik
   /// C# (RawPrinterHelper) yuklaymiz — qo'shimcha plagin kerak emas.
+  /// To'g'ridan-to'g'ri winspool (FFI) orqali RAW yozish — PowerShell'siz.
+  /// `cmd copy /b \\localhost\PRINTER` bilan AYNAN bir xil mexanizm.
+  /// null = muvaffaqiyat, aks holda xato matni.
+  static String? _win32RawPrint(String printerName, List<int> bytes) {
+    return using((arena) {
+      var name = printerName.trim();
+      if (name.isEmpty) {
+        // Nom kiritilmagan — Windows standart printeri.
+        final len = arena<Uint32>()..value = 512;
+        final buf = arena<Uint16>(512).cast<Utf16>();
+        if (w32.GetDefaultPrinter(buf, len.cast()) == 0) {
+          return 'Standart printer topilmadi — Sozlamalarda printer nomini kiriting';
+        }
+        name = buf.toDartString();
+      }
+      final hOut = arena<IntPtr>();
+      if (w32.OpenPrinter(
+              name.toNativeUtf16(allocator: arena), hOut, nullptr) ==
+          0) {
+        return 'Printer ochilmadi: "$name" (Win32 ${w32.GetLastError()}) — '
+            'nom Windows\'dagi bilan aynan bir xilmi?';
+      }
+      final h = hOut.value;
+      try {
+        final di = arena<w32.DOC_INFO_1>();
+        di.ref.pDocName = 'AIBA POS'.toNativeUtf16(allocator: arena);
+        di.ref.pOutputFile = nullptr;
+        di.ref.pDatatype = 'RAW'.toNativeUtf16(allocator: arena);
+        if (w32.StartDocPrinter(h, 1, di.cast()) == 0) {
+          return 'StartDocPrinter xato (Win32 ${w32.GetLastError()})';
+        }
+        try {
+          w32.StartPagePrinter(h);
+          final data = arena<Uint8>(bytes.length);
+          data.asTypedList(bytes.length).setAll(0, bytes);
+          final written = arena<Uint32>();
+          final ok =
+              w32.WritePrinter(h, data.cast(), bytes.length, written);
+          w32.EndPagePrinter(h);
+          if (ok == 0 || written.value != bytes.length) {
+            return 'WritePrinter xato (Win32 ${w32.GetLastError()})';
+          }
+        } finally {
+          w32.EndDocPrinter(h);
+        }
+        return null;
+      } finally {
+        w32.ClosePrinter(h);
+      }
+    });
+  }
+
   Future<PrintReport> _sendWindows(List<int> bytes) async {
+    // 1) Avval FFI (winspool to'g'ridan-to'g'ri) — tez va osilmaydi.
+    //    Nom kiritilgan bo'lsa FAQAT shu yo'l: xato bo'lsa sababi aniq
+    //    qaytadi, PowerShell'ga tushmaydi.
+    final cfgName = _config.printerName;
+    try {
+      final err = _win32RawPrint(cfgName, bytes);
+      if (err == null) {
+        return PrintReport(
+            PrintOutcome.printed,
+            'Chek chop etildi → '
+            '${cfgName.isEmpty ? 'standart printer' : cfgName}');
+      }
+      debugPrint('[PrinterService] win32 ffi: $err');
+      if (cfgName.isNotEmpty) {
+        return PrintReport(PrintOutcome.failed, err);
+      }
+      // Nomsiz rejimda avto-aniqlash uchun PowerShell'ga o'tamiz.
+    } catch (e) {
+      debugPrint('[PrinterService] win32 ffi exception: $e');
+    }
+    return _sendWindowsPs(bytes);
+  }
+
+  Future<PrintReport> _sendWindowsPs(List<int> bytes) async {
     try {
       final tmp = Directory.systemTemp.path;
       final stamp = DateTime.now().microsecondsSinceEpoch;

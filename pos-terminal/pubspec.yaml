@@ -58,6 +58,11 @@ dependencies:
   # Value equality for entities
   equatable: ^2.0.5
 
+  # Windows'da chekni to'g'ridan-to'g'ri spooler API (winspool) orqali yozish —
+  # PowerShell qatlamisiz (u ba'zi kassalarда osilib qolardi).
+  win32: ^5.5.0
+  ffi: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
