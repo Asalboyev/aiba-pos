@@ -124,7 +124,10 @@ class PrinterService {
       }
       printer.rawBytes(bytes);
       printer.disconnect(delayMs: 200);
-      return const PrintReport(PrintOutcome.printed, 'Chek chop etildi');
+      // Qayerga ketgani ko'rsatiladi — noto'g'ri IP'ga «muvaffaqiyatli»
+      // ketib qog'oz chiqmasligini kassir darhol payqaydi.
+      return PrintReport(PrintOutcome.printed,
+          'Chek chop etildi → IP $host:${_config.printerPort}');
     } catch (e) {
       debugPrint('[PrinterService] print failed: $e');
       return PrintReport(PrintOutcome.failed, 'Chop etish xatosi: $e');
@@ -224,10 +227,14 @@ class PrinterService {
         // chiqmadi» holatida kassir noto'g'ri printer tanlanganini darhol
         // ko'radi (Sozlamalarda aniq nomini kiritib tuzatadi).
         final out = res.stdout.toString();
-        final picked = RegExp(r"AIBA: [^\n]*?: ([^\n]+)")
-            .allMatches(out)
-            .map((m) => m.group(1)!.trim())
-            .lastOrNull;
+        final picked = RegExp(r"AIBA-OK: ([^\n]+)")
+                .firstMatch(out)
+                ?.group(1)
+                ?.trim() ??
+            RegExp(r"AIBA: [^\n]*?: ([^\n]+)")
+                .allMatches(out)
+                .map((m) => m.group(1)!.trim())
+                .lastOrNull;
         return PrintReport(
             PrintOutcome.printed,
             picked == null
@@ -372,6 +379,15 @@ try {
   $names = @(Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join '; '
   Fail ("Chop etish xatosi (" + $printer + "): " + $_.Exception.Message + " | Mavjud printerlar: " + $names)
 }
+# Hujjat navbatdan CHIQIB KETDIMI — 2 soniya kutib tekshiramiz. Tiqilib
+# qolsa (o'lik port/navbat) bu XATO deb qaytariladi: "chop etildi" degan
+# yolg'on xabar o'rniga kassir aniq sababni ko'radi.
+Start-Sleep -Milliseconds 2000
+$stuck = @(Get-PrintJob -PrinterName $printer -ErrorAction SilentlyContinue)
+if ($stuck.Count -gt 0) {
+  Fail ("'" + $printer + "' navbatida hujjat TIQILIB qoldi (" + $stuck.Count + " ta) - bu navbat printerga ulanmagan (o'lik port). Windows'da probniy chiqqan ISHLAYDIGAN printer nomini Sozlamalarga yozing.")
+}
+Write-Output ("AIBA-OK: " + $printer)
 ''';
 
   String _previewText(ReceiptData d) {
