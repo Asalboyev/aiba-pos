@@ -429,7 +429,11 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
       final isCorrection = receipt.replacesErrorNumber != null;
       final offlineNote = result.synced ? '' : ' · Oflayn saqlandi';
       if (cashOnly && !isCorrection) {
-        _toast(context, 'To\'landi ✓$offlineNote · Chek kerak bo\'lsa — F12');
+        // Naqd: chek DARHOL chiqadi, lekin fiskal QRsiz — mijoz so'rasa
+        // kassir F12 bosadi (QR bilan to'liq nusxa chiqadi).
+        _toast(context, 'To\'landi ✓$offlineNote · Chek chiqarilmoqda');
+        // ignore: unawaited_futures
+        _printNoQrReceipt(context, ref, receipt);
       } else {
         _toast(context, 'To\'landi ✓$offlineNote · Chek chiqarilmoqda');
         // Fiskal tayyor bo'lishi bilan fonda chop etiladi — kassir kutmaydi.
@@ -493,6 +497,46 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     if (context.mounted && report.outcome != PrintOutcome.printed) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(report.message)));
+    }
+  }
+
+  /// Naqd to'lov: chek DARHOL chop etiladi, fiskal QRsiz (fiskal baribir
+  /// soliqqa fonda ketadi — bu faqat qog'oz ko'rinishi). Mijoz to'liq chek
+  /// so'rasa kassir F12 bosadi (QR bilan chiqadi).
+  Future<void> _printNoQrReceipt(
+      BuildContext context, WidgetRef ref, ReceiptData receipt) async {
+    final noQr = ReceiptData(
+      restaurantName: receipt.restaurantName,
+      terminalName: receipt.terminalName,
+      orderNumber: receipt.orderNumber,
+      items: receipt.items,
+      subtotal: receipt.subtotal,
+      discount: receipt.discount,
+      total: receipt.total,
+      payments: receipt.payments,
+      fiscal: null,
+      createdAt: receipt.createdAt,
+      legalName: receipt.legalName,
+      inn: receipt.inn,
+      address: receipt.address,
+      phone: receipt.phone,
+      header: receipt.header,
+      footer: receipt.footer,
+      showQr: false,
+      showMxik: receipt.showMxik,
+      paperWidth: receipt.paperWidth,
+      replacesErrorNumber: receipt.replacesErrorNumber,
+    );
+    try {
+      final rep =
+          await ref.read(printerServiceProvider).printReceipt(noQr);
+      if (context.mounted && rep.outcome != PrintOutcome.printed) {
+        _toast(context, '${rep.message} · F12 bilan qayta urining');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        _toast(context, 'Chek chiqarilmadi — F12 bilan qayta urining');
+      }
     }
   }
 

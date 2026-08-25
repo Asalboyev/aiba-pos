@@ -220,7 +220,19 @@ class PrinterService {
           final msg = lines.isEmpty ? 'noma\'lum xato' : lines.first;
           return PrintReport(PrintOutcome.failed, 'Printerga yuborilmadi: $msg');
         }
-        return const PrintReport(PrintOutcome.printed, 'Chek chop etildi');
+        // Qaysi printerga ketgani ko'rsatiladi — «chop etildi lekin qog'oz
+        // chiqmadi» holatida kassir noto'g'ri printer tanlanganini darhol
+        // ko'radi (Sozlamalarda aniq nomini kiritib tuzatadi).
+        final out = res.stdout.toString();
+        final picked = RegExp(r"AIBA: [^\n]*?: ([^\n]+)")
+            .allMatches(out)
+            .map((m) => m.group(1)!.trim())
+            .lastOrNull;
+        return PrintReport(
+            PrintOutcome.printed,
+            picked == null
+                ? 'Chek chop etildi'
+                : 'Chek chop etildi → $picked');
       } finally {
         try {
           await File(binPath).delete();
@@ -317,9 +329,9 @@ if ([string]::IsNullOrWhiteSpace($printer)) {
   $kw = 'POS|THERM|RECEIPT|CHEK|AIBA|XPRINTER|XP-|RONGTA|RP-|TM-|GP-|GOOJPRT|SEWOO|BIXOLON|CITIZEN|ZYWELL|HOIN|OCPP|GENERIC|(^|[^0-9])(58|80)([^0-9]|$)'
   $usbPort = '^(USB|ESDPRT|POS)'
   $cand = @($real | Where-Object { ($_.Name + ' ' + $_.DriverName) -match $kw } |
-    Sort-Object -Property @{Expression={-not $_.WorkOffline};Descending=$true},
-                          @{Expression={$_.PortName -match $usbPort};Descending=$true},
-                          @{Expression={$_.Default};Descending=$true})
+    Sort-Object -Property @{Expression={$_.Default};Descending=$true},
+                          @{Expression={-not $_.WorkOffline};Descending=$true},
+                          @{Expression={$_.PortName -match $usbPort};Descending=$true})
   if ($cand.Count -eq 0) {
     $cand = @($real | Where-Object { $_.PortName -match $usbPort } |
       Sort-Object -Property @{Expression={-not $_.WorkOffline};Descending=$true})
