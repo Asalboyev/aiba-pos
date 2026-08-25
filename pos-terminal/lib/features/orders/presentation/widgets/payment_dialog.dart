@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/utils/money.dart';
+import '../../../../core/utils/thousands_formatter.dart';
 import '../../../../core/widgets/pos_chrome.dart';
 import '../../domain/entities/payment_method.dart';
 
@@ -38,7 +39,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
   final List<Payment> _parts = [];
   late PaymentMethod _method = widget.initialMethod ?? PaymentMethod.cash;
   late final TextEditingController _amount =
-      TextEditingController(text: widget.total.round().toString());
+      TextEditingController(text: ThousandsInputFormatter.format(widget.total));
 
   @override
   void initState() {
@@ -47,8 +48,18 @@ class _PaymentDialogState extends State<PaymentDialog> {
     _amount.addListener(_onAmountChanged);
   }
 
+  bool _clamping = false;
   void _onAmountChanged() {
-    if (mounted) setState(() {});
+    if (!mounted || _clamping) return;
+    // Naqddan BOSHQA usulda (karta/QR) jamidan ORTIQ summa terib bo'lmaydi —
+    // kartadan ortiqcha pul yechib "qaytim" berish degani yo'q. Ortiq terilsa
+    // avtomatik qoldiqqa tushiriladi. Kam bo'lsa — bo'lib to'lash ishlaydi.
+    if (_method != PaymentMethod.cash && _amountValue > _remaining) {
+      _clamping = true;
+      _amount.text = ThousandsInputFormatter.format(_remaining);
+      _clamping = false;
+    }
+    setState(() {});
   }
 
   @override
@@ -60,14 +71,16 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
   num get _paid => _parts.fold<num>(0, (s, p) => s + p.amount);
   num get _remaining => widget.total - _paid;
-  num get _amountValue => num.tryParse(_amount.text.trim()) ?? 0;
+  num get _amountValue =>
+      num.tryParse(_amount.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
   /// Kassir ortiq summa kiritsa — qaytim. To'lov usuli muhim emas: kassir
   /// mijozga qancha qaytarishini darhol ko'rishi kerak.
   num get _change => _amountValue - _remaining;
   bool _used(PaymentMethod m) => _parts.any((p) => p.method == m);
   bool get _inSplit => _parts.isNotEmpty;
 
-  void _setAmountToRemaining() => _amount.text = _remaining.round().toString();
+  void _setAmountToRemaining() =>
+      _amount.text = ThousandsInputFormatter.format(_remaining);
 
   void _selectMethod(PaymentMethod m) => setState(() {
         _method = m;
@@ -110,7 +123,10 @@ class _PaymentDialogState extends State<PaymentDialog> {
   String _assetFor(PaymentMethod m) => switch (m) {
         PaymentMethod.cash => 'assets/icons/pay_cash.svg',
         PaymentMethod.card => 'assets/icons/pay_card.svg',
-        PaymentMethod.qr => 'assets/icons/pay_qr_fill.svg',
+        PaymentMethod.qr ||
+        PaymentMethod.click ||
+        PaymentMethod.uzum =>
+          'assets/icons/pay_qr_fill.svg',
         PaymentMethod.keldiKetdi => 'assets/icons/pay_users.svg',
       };
 
@@ -145,7 +161,14 @@ class _PaymentDialogState extends State<PaymentDialog> {
           if (e.logicalKey == LogicalKeyboardKey.f4) pick = PaymentMethod.card;
           if (e.logicalKey == LogicalKeyboardKey.f3) pick = PaymentMethod.qr;
           if (pick != null && !_used(pick)) {
-            setState(() => _method = pick!);
+            setState(() {
+              _method = pick!;
+              // Naqd bo'lmagan usulga o'tilganda ortiqcha summa qoldiqqa
+              // tushiriladi (kartadan ortiq yechib bo'lmaydi).
+              if (pick != PaymentMethod.cash && _amountValue > _remaining) {
+                _setAmountToRemaining();
+              }
+            });
             return KeyEventResult.handled;
           }
           if (e.logicalKey == LogicalKeyboardKey.enter ||
@@ -263,7 +286,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   }
                 },
                 keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                // Probel bilan guruhlangan ko'rinish: 216 700.
+                inputFormatters: [ThousandsInputFormatter()],
                 style: const TextStyle(
                     color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
                 textAlign: TextAlign.end,

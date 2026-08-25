@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/providers/core_providers.dart';
@@ -25,7 +26,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Timer? _errorTimer;
 
   @override
+  void initState() {
+    super.initState();
+    // Fizik klaviatura: PIN raqamlarini to'g'ridan-to'g'ri terish mumkin
+    // (ekran tugmalarini bosish shart emas). Backspace — o'chirish.
+    HardwareKeyboard.instance.addHandler(_onHwKey);
+  }
+
+  bool _onHwKey(KeyEvent e) {
+    if (e is! KeyDownEvent || !mounted) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+    final ch = e.character;
+    if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch)) {
+      _digit(ch);
+      return true;
+    }
+    if (e.logicalKey == LogicalKeyboardKey.backspace) {
+      _backspace();
+      return true;
+    }
+    return false;
+  }
+
+  @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHwKey);
     _errorTimer?.cancel();
     super.dispose();
   }
@@ -71,17 +97,54 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
     // PIN-only: staffCode bo'sh — backend PIN orqali xodimni topadi.
-    // Smena kirishда avtomatik ochiladi (opening_cash = 0).
+    // Smena AVTO-OCHILMAYDI: smenani faqat menejer «Ish vaqti» bo'limida
+    // boshlang'ich kassani kiritib ochadi. Ochiq smena bo'lsa, server uni
+    // baribir sessiyaga bog'lab beradi.
     final ok = await ref.read(loginControllerProvider.notifier).login(
           terminalCode: terminalCode,
           staffCode: '',
           pin: _pin,
-          openShift: true,
+          openShift: false,
           openingCash: 0,
         );
     if (ok) {
       // Sozlash tugadi — endi "000" kodi ishlamaydi.
       await ref.read(appConfigProvider).markSetupDone();
+      // KASSIR smena yopiq bo'lsa kira olmaydi — smenani menejer ochadi.
+      // (Menejer smenasiz ham kiradi: aynan u smenani ochishi kerak.)
+      final s = ref.read(sessionProvider);
+      if (s != null && s.staff.role == 'cashier' && s.shiftId == null) {
+        await ref.read(sessionProvider.notifier).logout();
+        if (mounted) {
+          setState(() => _pin = '');
+          // ALERT — kassir aniq ko'rsin (snackbar sezilmay qolardi).
+          await showDialog<void>(
+            context: context,
+            builder: (dctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1C1D22),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: const Row(children: [
+                Icon(Icons.lock_clock, color: Color(0xFFF5A623), size: 26),
+                SizedBox(width: 10),
+                Text('Smena ochilmagan',
+                    style: TextStyle(color: Colors.white, fontSize: 18)),
+              ]),
+              content: const Text(
+                  'Kassir smena ochilmaguncha kira olmaydi.\n'
+                  'Avval menejer kirib, «Ish vaqti» bo\'limida smenani ochsin.',
+                  style: TextStyle(color: Color(0xFF9AA0A6), height: 1.5)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dctx).pop(),
+                  child: const Text('Tushunarli'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
     }
     if (!ok && mounted) setState(() => _pin = '');
   }

@@ -15,6 +15,9 @@ class ShiftRemoteDataSource {
     if (j == null) return null;
     DateTime? dt(dynamic v) =>
         v == null ? null : DateTime.tryParse(v.toString());
+    final byMethod = (j['by_method'] is Map)
+        ? (j['by_method'] as Map).cast<String, dynamic>()
+        : const <String, dynamic>{};
     return Shift(
       id: (j['id'] ?? '').toString(),
       status: (j['status'] ?? 'open').toString(),
@@ -30,6 +33,11 @@ class ShiftRemoteDataSource {
       errorChecksCount: (j['error_checks_count'] is num)
           ? (j['error_checks_count'] as num).toInt()
           : int.tryParse('${j['error_checks_count']}') ?? 0,
+      cardOnly: Money.parse(byMethod['card']),
+      clickTotal: Money.parse(byMethod['click']),
+      uzumTotal: Money.parse(byMethod['uzum']),
+      keldiTotal: Money.parse(byMethod['keldi_ketdi']),
+      expensesTotal: Money.parse(j['expenses_total']),
     );
   }
 

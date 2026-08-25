@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../core/utils/money.dart';
+import '../../../../core/utils/thousands_formatter.dart';
 import '../../../../core/widgets/pos_chrome.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../printing/data/receipt_builder.dart';
+import '../../../printing/presentation/printing_providers.dart';
 import '../../../reports/presentation/providers/reports_providers.dart';
 import '../../domain/entities/shift.dart';
 import '../providers/shift_providers.dart';
@@ -20,24 +25,41 @@ class ShiftScreen extends ConsumerStatefulWidget {
 }
 
 class _ShiftScreenState extends ConsumerState<ShiftScreen> {
+  Timer? _refresh;
+
   @override
   void initState() {
     super.initState();
     // Kassir mishka ishlatmaydi: Enter — smenani boshlash, Z — yopish.
     // Global handler (fokus qayerda bo'lishidan qat'i nazar ishlaydi).
     HardwareKeyboard.instance.addHandler(_onKey);
+    // Ekranga kirilganda statistika serverdan qayta so'raladi — aks holda
+    // smena ochilgandagi (nol) qiymatlar ko'rinib turadi. Har 30 soniyada
+    // yangilanadi: savdo jamlari va smena davomiyligi jonli bo'ladi.
+    Future.microtask(() {
+      if (mounted) ref.invalidate(currentShiftProvider);
+    });
+    _refresh = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) ref.invalidate(currentShiftProvider);
+    });
   }
 
   @override
   void dispose() {
+    _refresh?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
     super.dispose();
   }
+
+  /// Smena ochish/yopish — FAQAT menejer. Kassir faqat savdo qiladi.
+  bool get _isManager =>
+      (ref.read(sessionProvider)?.staff.role ?? '') != 'cashier';
 
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent || !mounted) return false;
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return false;
+    if (!_isManager) return false;
     final shift = ref.read(currentShiftProvider).valueOrNull;
     final isOpen = shift != null && shift.isOpen;
     final k = event.logicalKey;
@@ -51,6 +73,14 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
       return true;
     }
     return false;
+  }
+
+  /// Smena nomi — 2 ta 12 soatlik smena: 12:00–00:00 kunduzgi, 00:00–12:00
+  /// tunggi. Ochilgan vaqtiga qarab aniqlanadi.
+  static String _shiftName(DateTime? openedAt) {
+    if (openedAt == null) return '';
+    final h = openedAt.toLocal().hour;
+    return h >= 12 ? 'Kunduzgi smena (12:00–00:00)' : 'Tunggi smena (00:00–12:00)';
   }
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
@@ -89,12 +119,44 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     );
     if (confirm != true) return;
     try {
-      await ref.read(shiftRepositoryProvider).close(shiftId: shiftId);
+      final z = await ref.read(shiftRepositoryProvider).close(shiftId: shiftId);
       ref.read(sessionProvider.notifier).setShiftId(null);
       ref.invalidate(currentShiftProvider);
-      if (context.mounted) _snack(context, 'Smena yopildi');
+      if (context.mounted) _snack(context, 'Smena yopildi — Z-hisobot chiqarilmoqda');
+      // Z-HISOBOT cheki: smena kesimi (naqd/karta/Click/Uzum/keldi-ketdi,
+      // rasxod, xato cheklar) qog'ozda. Fonda — printer sekin bo'lsa ham
+      // oqim bloklanmaydi.
+      // ignore: unawaited_futures
+      _printZReport(z);
     } catch (e) {
       if (context.mounted) _snack(context, 'Xato: $e');
+    }
+  }
+
+  Future<void> _printZReport(Shift z) async {
+    try {
+      final ses = ref.read(sessionProvider);
+      final bytes = await ReceiptBuilder.buildZReport(
+        restaurantName: ses?.restaurant.name ?? 'AIBA',
+        shiftName: _shiftName(z.openedAt),
+        staffName: ses?.staff.name,
+        openedAt: z.openedAt,
+        closedAt: z.closedAt,
+        ordersCount: z.ordersCount,
+        totalSales: z.totalSales,
+        cash: z.totalCash,
+        card: z.cardOnly,
+        click: z.clickTotal,
+        uzum: z.uzumTotal,
+        keldi: z.keldiTotal,
+        openingCash: z.openingCash,
+        expenses: z.expensesTotal,
+        errorChecks: z.errorChecksCount,
+        paperWidth: ses?.restaurant.receiptPaperWidth ?? 80,
+      );
+      await ref.read(printerServiceProvider).printZReport(bytes);
+    } catch (_) {
+      if (mounted) _snack(context, 'Z-hisobot chop etilmadi (printer)');
     }
   }
 
@@ -140,7 +202,6 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     final ordersCount = shift?.ordersCount ?? 0;
     final totalSales = shift?.totalSales ?? 0;
     final totalCash = shift?.totalCash ?? 0;
-    final totalCard = shift?.totalCard ?? 0;
     final opening = shift?.openingCash ?? 0;
     final avg = ordersCount > 0 ? (totalSales / ordersCount) : 0;
     // Smena davomiyligi + boshlanish vaqti (Figma sarlavhasi).
@@ -163,6 +224,8 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
         ? (((ordersCount - errorChecks) / ordersCount) * 100).round()
         : 0;
 
+    // Naqd/Karta bu yerda TAKRORLANMAYDI — pastdagi to'lov kesimi qatorida
+    // (Naqd / Karta / Click / Uzum) bir marta ko'rsatiladi.
     final statsRow = Row(
       children: [
         _StatCard(
@@ -174,16 +237,6 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
             iconAsset: 'assets/icons/stat_chart.svg',
             label: 'Jami savdo',
             value: Money.formatSom(totalSales)),
-        const SizedBox(width: 14),
-        _StatCard(
-            iconAsset: 'assets/icons/stat_cash.svg',
-            label: 'Naqd',
-            value: Money.formatSom(totalCash)),
-        const SizedBox(width: 14),
-        _StatCard(
-            iconAsset: 'assets/icons/pay_card.svg',
-            label: 'Karta/QR',
-            value: Money.formatSom(totalCard)),
       ],
     );
 
@@ -213,7 +266,7 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
                       fontWeight: FontWeight.w700)),
               Text(
                   isOpen && startTime != null
-                      ? '$kassa · Boshlangan: $startTime'
+                      ? '$kassa · ${_shiftName(startedAt)} · Boshlangan: $startTime'
                       : '$kassa · Boshlanmagan',
                   style:
                       const TextStyle(color: PosColors.muted, fontSize: 13)),
@@ -247,10 +300,18 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
           children: [
             _MiniTile(label: 'Boshlang\'ich kassa', value: Money.formatSom(opening)),
             const SizedBox(width: 14),
+            // Joriy kassa = boshlang'ich + naqd savdo − rasxodlar.
             _MiniTile(
                 label: 'Joriy kassa',
-                value: Money.formatSom(opening + totalCash),
+                value: Money.formatSom(
+                    opening + totalCash - (shift?.expensesTotal ?? 0)),
                 valueColor: PosColors.green),
+            const SizedBox(width: 14),
+            // Manager Telegram botga «rasxod 50000 izoh» deb yozadi.
+            _MiniTile(
+                label: 'Rasxod',
+                value: Money.formatSom(shift?.expensesTotal ?? 0),
+                valueColor: PosColors.red),
             const SizedBox(width: 14),
             _MiniTile(
                 label: 'Jami daromad',
@@ -259,14 +320,23 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
           ],
         ),
         const SizedBox(height: 14),
-        // 4) Naqd savdo / Karta savdo / QR savdo (Figma).
+        // 4) To'lov turlari kesimi: Naqd / Karta / Click / Uzum — har biri
+        // alohida (admin paneldagi hisobot bilan bir xil).
         Row(
           children: [
             _MiniTile(label: 'Naqd savdo', value: Money.formatSom(totalCash)),
             const SizedBox(width: 14),
-            _MiniTile(label: 'Karta savdo', value: Money.formatSom(totalCard)),
+            _MiniTile(
+                label: 'Karta savdo',
+                value: Money.formatSom(shift?.cardOnly ?? 0)),
             const SizedBox(width: 14),
-            const _MiniTile(label: 'QR savdo', value: '0'),
+            _MiniTile(
+                label: 'Click savdo',
+                value: Money.formatSom(shift?.clickTotal ?? 0)),
+            const SizedBox(width: 14),
+            _MiniTile(
+                label: 'Uzum savdo',
+                value: Money.formatSom(shift?.uzumTotal ?? 0)),
           ],
         ),
         const SizedBox(height: 14),
@@ -298,26 +368,41 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
           ],
         ),
         const SizedBox(height: 18),
-        // 6) Boshlash / yopish tugmasi.
-        SizedBox(
-          width: double.infinity,
-          height: 60,
-          child: isOpen
-              ? _BigButton(
-                  label: 'Smenani yopish (z)',
-                  icon: Icons.power_settings_new,
-                  color: const Color(0x33E5484D),
-                  textColor: PosColors.red,
-                  onTap: () => _close(context, ref, shift.id),
-                )
-              : _BigButton(
-                  label: '→  Smenani boshlash  (Enter)',
-                  icon: Icons.arrow_forward,
-                  color: PosColors.blue,
-                  textColor: Colors.white,
-                  onTap: () => _open(context, ref),
-                ),
-        ),
+        // 6) Boshlash / yopish tugmasi — FAQAT menejer. Kassir bu ekranni
+        // ko'rmaydi ham, lekin qo'shimcha himoya sifatida tugma yashiriladi.
+        if (_isManager)
+          SizedBox(
+            width: double.infinity,
+            height: 60,
+            child: isOpen
+                ? _BigButton(
+                    label: 'Smenani yopish (z)',
+                    icon: Icons.power_settings_new,
+                    color: const Color(0x33E5484D),
+                    textColor: PosColors.red,
+                    onTap: () => _close(context, ref, shift.id),
+                  )
+                : _BigButton(
+                    label: '→  Smenani boshlash  (Enter)',
+                    icon: Icons.arrow_forward,
+                    color: PosColors.blue,
+                    textColor: Colors.white,
+                    onTap: () => _open(context, ref),
+                  ),
+          )
+        else
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: PosColors.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: PosColors.cardBorder),
+            ),
+            child: const Text('Smenani faqat menejer ochadi va yopadi',
+                style: TextStyle(color: PosColors.muted, fontSize: 14)),
+          ),
         const SizedBox(height: 18),
         // 7) Amalga oshmagan buyurtmalar (Figma) — real ro'yxat.
         const _FailedOrdersSection(),
@@ -899,7 +984,7 @@ class _PosDialogState extends State<_PosDialog> {
                     controller: _ctrl,
                     autofocus: true,
                     keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    inputFormatters: [ThousandsInputFormatter()],
                     onSubmitted: (_) => _confirm(),
                     textAlign: TextAlign.center,
                     style: const TextStyle(

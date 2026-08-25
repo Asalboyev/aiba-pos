@@ -10,6 +10,10 @@ import '../../../menu/domain/entities/product.dart';
 import '../../../menu/presentation/providers/menu_providers.dart';
 import '../../../printing/domain/receipt_data.dart';
 import '../../../printing/presentation/printing_providers.dart';
+import '../../../shift/presentation/providers/shift_providers.dart';
+import '../../../printing/data/printer_service.dart';
+import '../../domain/entities/cart.dart';
+import '../../domain/entities/checkout_result.dart';
 import '../../domain/entities/order_draft.dart';
 import '../../domain/entities/payment_method.dart';
 import '../providers/cart_provider.dart';
@@ -33,6 +37,15 @@ class PosSaleScreen extends ConsumerStatefulWidget {
 /// Oxirgi "xato" deb belgilangan chek raqami — keyingi (to'g'ri) chekда
 /// "XATO CHEK №13 o'rniga" satri chiqadi, keyin tozalanadi.
 String? _lastErrorCheckNumber;
+
+/// Oxirgi to'langan chek — natija dialogi olib tashlangani uchun shu yerda
+/// eslab qolinadi: F12 — mijoz so'rasa chop etish, F11 — xato deb belgilash.
+ReceiptData? _lastReceipt;
+CheckoutResult? _lastResult;
+
+/// Chek logosi keshi (url → baytlar) — har chekda qayta yuklamaslik uchun
+/// (sekundlarga tezlashadi, ayniqsa sekin tarmoqda).
+final Map<String, List<int>> _logoCache = {};
 
 class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
   @override
@@ -109,6 +122,33 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
       _closeOrder(context, ref);
       return true;
     }
+    // F10 — Click Pass (tezkor yo'l): mijoz QR ko'rsatdi → kassir F10 bosib
+    // skanerlaydi → pul yechilishi bilan order o'zi yopiladi. Savat bo'sh
+    // bo'lsa F10 bo'limlar aylanishiga (home_shell) qoladi.
+    if (k == LogicalKeyboardKey.f10) {
+      final cart = ref.read(cartProvider);
+      if (cart.isEmpty) return false;
+      _checkout(context, ref, PaymentMethod.qr, qrScan: true);
+      return true;
+    }
+    // F12 — oxirgi chekni chop etish (mijoz chek so'rasagina).
+    if (k == LogicalKeyboardKey.f12) {
+      final rec = _lastReceipt;
+      final res = _lastResult;
+      if (rec != null && res != null) {
+        _toast(context, 'Chek chop etilmoqda...');
+        // ignore: unawaited_futures
+        _printFresh(context, ref, rec, res);
+      } else {
+        _toast(context, 'Hali chek yo\'q');
+      }
+      return true;
+    }
+    // F11 — oxirgi to'langan chekni XATO deb belgilash.
+    if (k == LogicalKeyboardKey.f11) {
+      _markLastError(context, ref);
+      return true;
+    }
     // Savatdagi oxirgi qatorni o'chirish — Delete/Backspace (qidiruv bo'sh
     // bo'lsagina, aks holda matn tahriri buzilmasin).
     if ((k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) &&
@@ -151,98 +191,122 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
         posSearchFocusNode.requestFocus();
         return;
       }
-      // 1) Bazaga XATO CHEK sifatida yozamiz — chek RAQAMI beriladi va
-      // adminka "Xato cheklar" ro'yxatida ko'rinadi. To'lov yo'q, shuning
-      // uchun fiskalga ketmaydi (soliqqa yuborilmaydi).
-      String? errNumber;
-      try {
-        final dio = ref.read(dioClientProvider);
-        // Chek raqami oddiy savdo bilan bir xil ketma-ketlikda beriladi —
-        // xato chek ham navbatdagi raqamni oladi (masalan GDT1-15).
-        final errNo = await ref.read(appConfigProvider).nextOrderNumber();
-        final res = await dio.post(
-          '/api/v2/pos-terminal/orders',
-          data: {
-            'client_uuid': const Uuid().v4(),
-            'number': errNo,
-            'items': [
-              for (final it in cart.items)
-                {
-                  if (it.productId != null) 'product_id': it.productId,
-                  'name': it.name,
-                  'qty': it.qty,
-                  'price': it.price,
-                  if (it.labels.isNotEmpty) 'labels': it.labels,
-                }
-            ],
-            'payments': const [],
-            'note': 'Xato urilgan chek: ${r.reason}',
-          },
-        );
-        final data = (res.data is Map) ? res.data as Map : const {};
-        final order = (data['order'] is Map) ? data['order'] as Map : const {};
-        final oid = (order['id'] ?? '').toString();
-        errNumber = (order['number'] ?? '').toString();
-        if (oid.isNotEmpty) {
-          await dio.post('/api/v2/pos-terminal/orders/$oid/mark-error',
-              data: {'reason': r.reason, 'note': r.note});
-          // Ochiq qolmasin — bekor qilingan holatga o'tkazamiz.
-          await dio.post('/api/v2/pos-terminal/orders/$oid/cancel');
-        }
-      } catch (_) {
-        // Oflayn/xato — chek baribir chop etiladi (raqamsiz).
-      }
-      if (errNumber != null && errNumber.isEmpty) errNumber = null;
-      // Keyingi (to'g'irlangan) chekда shu raqamga havola qoldiramiz.
-      _lastErrorCheckNumber = errNumber;
-
-      // 2) XATO CHEK nusxasini chop etamiz (chek raqami bilan).
-      final ses = ref.read(sessionProvider);
-      final rr = ses?.restaurant;
-      final errSlip = ReceiptData(
-        restaurantName: rr?.name ?? 'AIBA',
-        terminalName: ses?.terminal.name,
-        orderNumber: errNumber,
-        items: cart.items,
-        subtotal: cart.subtotal,
-        discount: cart.discount,
-        total: cart.total,
-        payments: const [],
-        fiscal: null,
-        createdAt: DateTime.now(),
-        legalName: rr?.legalName,
-        inn: rr?.inn,
-        address: rr?.address,
-        phone: rr?.receiptPhone,
-        header: rr?.receiptHeader,
-        footer: rr?.receiptFooter,
-        showQr: false,
-        showMxik: rr?.receiptShowMxik ?? true,
-        paperWidth: rr?.receiptPaperWidth ?? 80,
-        isErrorCheck: true,
-        errorReason: r.reason,
-      );
-      final rep =
-          await ref.read(printerServiceProvider).printReceipt(errSlip);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(SnackBar(
-              content: Text('Xato chek: ${r.reason} · ${rep.message}')));
-      }
+      // Savat nusxasini olamiz — order DARHOL yopiladi (pastda), server
+      // yozuvi va chop etish esa fonda ketadi. Aks holda printer qidiruvi
+      // (ayniqsa printersiz kompda) oqimni sekundlab ushlab turadi va
+      // "order yopilmayapti" bo'lib ko'rinadi.
+      final snapshot = cart;
+      if (!context.mounted) return;
+      // ignore: unawaited_futures
+      _registerAndPrintErrorCheck(context, ref, snapshot, r);
     }
 
-    if (notifier.orderCount <= 1) {
-      notifier.clear();
-    } else {
-      notifier.closeOrder(notifier.activeOrder);
-      if (context.mounted) _toast(context, 'Zakaz yopildi');
+    // Xato chekdan keyin ham, oddiy bekor qilishда ham order DARHOL YOPILADI —
+    // savat tozalanadi. Kassir to'g'ri mahsulotlarni qaytadan teradi;
+    // to'g'irlangan chek AYNAN o'sha raqam bilan chiqadi.
+    final hadTabs = notifier.orderCount > 1;
+    notifier.finishActiveOrder();
+    if (context.mounted) {
+      _toast(context,
+          cart.items.isNotEmpty ? 'Xato chek — order yopildi' : (hadTabs ? 'Zakaz yopildi' : ''));
     }
     posSearchFocusNode.requestFocus();
   }
 
+  /// Xato chekni FONDA rasmiylashtiradi: serverga yozadi (raqam oladi),
+  /// keyingi to'g'ri chek uchun raqamni eslab qoladi va XATO CHEK nusxasini
+  /// chop etadi. Oqim bloklanmaydi — order allaqachon yopilgan.
+  Future<void> _registerAndPrintErrorCheck(BuildContext context, WidgetRef ref,
+      Cart cart, ErrorCheckResult r) async {
+    // 1) Bazaga XATO CHEK sifatida yozamiz — chek RAQAMI beriladi va
+    // adminka "Xato cheklar" ro'yxatida ko'rinadi. To'lov yo'q, shuning
+    // uchun fiskalga ketmaydi (soliqqa yuborilmaydi).
+    String? errNumber;
+    try {
+      final dio = ref.read(dioClientProvider);
+      // Chek raqami oddiy savdo bilan bir xil ketma-ketlikda beriladi —
+      // xato chek ham navbatdagi raqamni oladi (masalan GDT1-15).
+      final errNo = await ref.read(appConfigProvider).nextOrderNumber();
+      final res = await dio.post(
+        '/api/v2/pos-terminal/orders',
+        data: {
+          'client_uuid': const Uuid().v4(),
+          'number': errNo,
+          'items': [
+            for (final it in cart.items)
+              {
+                if (it.productId != null) 'product_id': it.productId,
+                'name': it.name,
+                'qty': it.qty,
+                'price': it.price,
+                if (it.labels.isNotEmpty) 'labels': it.labels,
+              }
+          ],
+          'payments': const [],
+          'note': 'Xato urilgan chek: ${r.reason}',
+        },
+      );
+      final data = (res.data is Map) ? res.data as Map : const {};
+      final order = (data['order'] is Map) ? data['order'] as Map : const {};
+      final oid = (order['id'] ?? '').toString();
+      errNumber = (order['number'] ?? '').toString();
+      if (oid.isNotEmpty) {
+        await dio.post('/api/v2/pos-terminal/orders/$oid/mark-error',
+            data: {'reason': r.reason, 'note': r.note});
+        // Ochiq qolmasin — bekor qilingan holatga o'tkazamiz.
+        await dio.post('/api/v2/pos-terminal/orders/$oid/cancel');
+      }
+    } catch (_) {
+      // Oflayn/xato — chek baribir chop etiladi (raqamsiz).
+    }
+    if (errNumber != null && errNumber.isEmpty) errNumber = null;
+    // Keyingi (to'g'irlangan) chekда shu raqamga havola qoldiramiz.
+    _lastErrorCheckNumber = errNumber;
+
+    // 2) XATO CHEK nusxasini chop etamiz (chek raqami bilan). Chop etish
+    // yiqilsa ham order allaqachon yopilgan — jarayon buzilmaydi.
+    final ses = ref.read(sessionProvider);
+    final rr = ses?.restaurant;
+    final errSlip = ReceiptData(
+      restaurantName: rr?.name ?? 'AIBA',
+      terminalName: ses?.terminal.name,
+      orderNumber: errNumber,
+      items: cart.items,
+      subtotal: cart.subtotal,
+      discount: cart.discount,
+      total: cart.total,
+      payments: const [],
+      fiscal: null,
+      createdAt: DateTime.now(),
+      legalName: rr?.legalName,
+      inn: rr?.inn,
+      address: rr?.address,
+      phone: rr?.receiptPhone,
+      header: rr?.receiptHeader,
+      footer: rr?.receiptFooter,
+      showQr: false,
+      showMxik: rr?.receiptShowMxik ?? true,
+      paperWidth: rr?.receiptPaperWidth ?? 80,
+      isErrorCheck: true,
+      errorReason: r.reason,
+    );
+    try {
+      final rep =
+          await ref.read(printerServiceProvider).printReceipt(errSlip);
+      if (context.mounted) {
+        _toast(context,
+            'Xato chek №${errNumber ?? "—"} (${r.reason}) · ${rep.message}');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        _toast(context, 'Xato chek belgilandi, lekin chop etilmadi');
+      }
+    }
+  }
+
   Future<void> _checkout(
-      BuildContext context, WidgetRef ref, PaymentMethod method) async {
+      BuildContext context, WidgetRef ref, PaymentMethod method,
+      {bool qrScan = false}) async {
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) return;
 
@@ -257,45 +321,11 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
         Payment(PaymentMethod.keldiKetdi, cart.total, label: 'Keldi-ketdi'),
       ];
     } else if (method == PaymentMethod.qr) {
-      // QR to'lovда 2 chek: 1) "To'lash" bosilganda mahsulotlar + TO'LOV KODI
-      // QR (fiskal emas) — mijoz skanerlab to'laydi; 2) to'lov o'tgach fiskal
-      // chek avtomatik chiqadi. Boshqa to'lov turlarida — bitta chek.
-      payments = await QrPayDialog.show(
-        context,
-        cart.total,
-        onPrintPaymentSlip: (checkoutUrl) async {
-          final ses = ref.read(sessionProvider);
-          final rr = ses?.restaurant;
-          final slip = ReceiptData(
-            restaurantName: rr?.name ?? 'AIBA',
-            terminalName: ses?.terminal.name,
-            orderNumber: null, // chek raqami hali yo'q (to'lovdan oldin)
-            items: cart.items,
-            subtotal: cart.subtotal,
-            discount: cart.discount,
-            total: cart.total,
-            payments: const [],
-            fiscal: null,
-            createdAt: DateTime.now(),
-            legalName: rr?.legalName,
-            inn: rr?.inn,
-            address: rr?.address,
-            phone: rr?.receiptPhone,
-            header: rr?.receiptHeader,
-            footer: rr?.receiptFooter,
-            showQr: false,
-            showMxik: rr?.receiptShowMxik ?? true,
-            paperWidth: rr?.receiptPaperWidth ?? 80,
-            paymentQrUrl: checkoutUrl,
-          );
-          final rep = await ref.read(printerServiceProvider).printReceipt(slip);
-          if (context.mounted) {
-            ScaffoldMessenger.of(context)
-              ..clearSnackBars()
-              ..showSnackBar(SnackBar(content: Text(rep.message)));
-          }
-        },
-      );
+      // Click / Uzum. F10 (qrScan=true) — Click Pass: skaner maydoni ochiq,
+      // mijoz QRi o'qilishi bilan pul yechiladi va order AVTOMATIK yopiladi.
+      // F3 (qrScan=false) — statik QR: mijoz kassadagi QRni ilovada to'laydi,
+      // kassir qo'lda tasdiqlaydi.
+      payments = await QrPayDialog.show(context, cart.total, scanMode: qrScan);
     } else {
       payments =
           await PaymentDialog.show(context, cart.total, initialMethod: method);
@@ -326,6 +356,9 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     final result = await ref.read(ordersRepositoryProvider).checkout(draft);
     ref.invalidate(recentOrdersProvider);
     ref.invalidate(unsyncedCountProvider);
+    // Ish vaqti ekrani smena jamlarini (savdo, naqd, karta, buyurtmalar soni)
+    // shu provider orqali ko'rsatadi — sotuvdan keyin yangilanmasa nol qoladi.
+    ref.invalidate(currentShiftProvider);
 
     // Kassa-relay fiskal: navbatga tushgan chekni darhol lokal Communicator
     // orqali yuborishga urinamiz (fire-and-forget — dialog holatni o'zi
@@ -367,90 +400,47 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
 
     if (!context.mounted) return;
 
-    // 3) Show result + QR; clear the cart.
-    final printerService = ref.read(printerServiceProvider);
-    await FiscalResultDialog.show(
-      context,
-      result: result,
-      // Dialog polls fiscal until "sent" and hands us the refreshed CheckoutResult,
-      // so the printed receipt carries the final fiscal_sign + QR (not "pending").
-      onPrint: (refreshed) async {
-        // Adminka'da chek sozlamalari o'zgargan bo'lishi mumkin — chop etishdan
-        // oldin serverdan yangi qiymatlarni olamiz. Server javob bergan bo'lsa,
-        // barcha maydonlarni to'la almashtiramiz (jumladan null'lar — foydalanuvchi
-        // maydonni bo'shatgan bo'lishi mumkin). Offline bo'lsa eskisi ishlaydi.
-        await ref.read(sessionProvider.notifier).refreshRestaurant();
-        final freshR = ref.read(sessionProvider)?.restaurant;
-        final useFresh = freshR != null;
-        // Logoni ham yuklab olamiz — chekda katta va aniq chiqishi uchun.
-        List<int>? logoBytes;
-        final logoUrl = useFresh ? freshR.receiptLogoUrl : null;
-        if (logoUrl != null && logoUrl.isNotEmpty) {
-          logoBytes = await ref.read(dioClientProvider).fetchBytes(logoUrl);
-        }
-        final freshReceipt = ReceiptData(
-          restaurantName: useFresh ? freshR.name : receipt.restaurantName,
-          terminalName: receipt.terminalName,
-          orderNumber: refreshed.orderNumber ?? receipt.orderNumber,
-          items: receipt.items,
-          subtotal: receipt.subtotal,
-          discount: receipt.discount,
-          total: receipt.total,
-          payments: receipt.payments,
-          fiscal: refreshed.fiscal ?? receipt.fiscal,
-          createdAt: receipt.createdAt,
-          legalName: useFresh ? freshR.legalName : receipt.legalName,
-          inn: useFresh ? freshR.inn : receipt.inn,
-          address: useFresh ? freshR.address : receipt.address,
-          phone: useFresh ? freshR.receiptPhone : receipt.phone,
-          header: useFresh ? freshR.receiptHeader : receipt.header,
-          footer: useFresh ? freshR.receiptFooter : receipt.footer,
-          showQr: useFresh ? freshR.receiptShowQr : receipt.showQr,
-          showMxik: useFresh ? freshR.receiptShowMxik : receipt.showMxik,
-          paperWidth: useFresh ? freshR.receiptPaperWidth : receipt.paperWidth,
-          logoBytes: logoBytes,
-        );
-        final report = await printerService.printReceipt(freshReceipt);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(report.message)),
-          );
-        }
-      },
-      // Kassir "Xato urildi" deb belgilaganda: XATO CHEK bannerли nusxa
-      // chop etiladi va raqam eslab qolinadi (keyingi to'g'ri chek uchun).
-      onMarkedError: (reason, note) async {
-        _lastErrorCheckNumber =
-            (receipt.orderNumber ?? '').replaceAll('#', '');
-        final errCopy = ReceiptData(
-          restaurantName: receipt.restaurantName,
-          terminalName: receipt.terminalName,
-          orderNumber: receipt.orderNumber,
-          items: receipt.items,
-          subtotal: receipt.subtotal,
-          discount: receipt.discount,
-          total: receipt.total,
-          payments: receipt.payments,
-          fiscal: receipt.fiscal,
-          createdAt: receipt.createdAt,
-          legalName: receipt.legalName,
-          inn: receipt.inn,
-          address: receipt.address,
-          phone: receipt.phone,
-          header: receipt.header,
-          footer: receipt.footer,
-          // Xato chekда soliq QR kerak emas — u hisobga olinmaydi.
-          showQr: false,
-          showMxik: receipt.showMxik,
-          paperWidth: receipt.paperWidth,
-          isErrorCheck: true,
-          errorReason: reason,
-        );
-        await printerService.printReceipt(errCopy);
-      },
-    );
+    // Oxirgi chek eslab qolinadi: F12 — chop etish (mijoz so'rasa),
+    // F11 — xato deb belgilash.
+    _lastReceipt = receipt;
+    _lastResult = result;
 
-    ref.read(cartProvider.notifier).clear();
+    // 3) Chek siyosati:
+    //    • Validatsiya xatosi — dialog qoladi (kassir sababni ko'rishi shart).
+    //    • Karta/QR — chek AVTOMATIK chop etiladi, hech qanday dialogsiz.
+    //    • Naqd / Keldi-ketdi — chek CHIQMAYDI; mijoz so'rasagina F12.
+    if (result.clientError != null) {
+      await FiscalResultDialog.show(
+        context,
+        result: result,
+        onPrint: (refreshed) => _printFresh(context, ref, receipt, refreshed),
+        onMarkedError: (reason, note) async {
+          _lastErrorCheckNumber =
+              (receipt.orderNumber ?? '').replaceAll('#', '');
+          await _printErrorCopy(ref, receipt, reason);
+        },
+      );
+    } else {
+      final cashOnly = draft.payments.every((p) =>
+          p.method == PaymentMethod.cash ||
+          p.method == PaymentMethod.keldiKetdi);
+      // To'g'irlangan chek (xato chek o'rniga) — naqd bo'lsa ham DOIM
+      // chiqadi: mijozda xato chek bor, to'g'risi ham qo'lida bo'lishi kerak.
+      final isCorrection = receipt.replacesErrorNumber != null;
+      final offlineNote = result.synced ? '' : ' · Oflayn saqlandi';
+      if (cashOnly && !isCorrection) {
+        _toast(context, 'To\'landi ✓$offlineNote · Chek kerak bo\'lsa — F12');
+      } else {
+        _toast(context, 'To\'landi ✓$offlineNote · Chek chiqarilmoqda');
+        // Fiskal tayyor bo'lishi bilan fonda chop etiladi — kassir kutmaydi.
+        // ignore: unawaited_futures
+        _autoPrintAfterFiscal(context, ref, receipt, result);
+      }
+    }
+
+    // To'langan zakaz tabi yopiladi (F7 bilan ochilgan qo'shimcha tab bo'lsa),
+    // yagona tab bo'lsa tozalanadi.
+    ref.read(cartProvider.notifier).finishActiveOrder();
 
     // 4) If we were offline, the order is queued; nudge a background push.
     if (!result.synced) {
@@ -460,6 +450,161 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
 
     // Keyingi savdo uchun qidiruv darhol tayyor (klaviatura-first).
     posSearchFocusNode.requestFocus();
+  }
+
+  /// Chekni serverdagi eng yangi sozlamalar (logo, header/footer) bilan chop
+  /// etadi. Muvaffaqiyatli chiqsa jim; muammo bo'lsa xabar ko'rsatiladi.
+  Future<void> _printFresh(BuildContext context, WidgetRef ref,
+      ReceiptData receipt, CheckoutResult refreshed) async {
+    await ref.read(sessionProvider.notifier).refreshRestaurant();
+    final freshR = ref.read(sessionProvider)?.restaurant;
+    final useFresh = freshR != null;
+    List<int>? logoBytes;
+    final logoUrl = useFresh ? freshR.receiptLogoUrl : null;
+    if (logoUrl != null && logoUrl.isNotEmpty) {
+      logoBytes = _logoCache[logoUrl] ??
+          await ref.read(dioClientProvider).fetchBytes(logoUrl);
+      if (logoBytes != null) _logoCache[logoUrl] = logoBytes;
+    }
+    final freshReceipt = ReceiptData(
+      restaurantName: useFresh ? freshR.name : receipt.restaurantName,
+      terminalName: receipt.terminalName,
+      orderNumber: refreshed.orderNumber ?? receipt.orderNumber,
+      items: receipt.items,
+      subtotal: receipt.subtotal,
+      discount: receipt.discount,
+      total: receipt.total,
+      payments: receipt.payments,
+      fiscal: refreshed.fiscal ?? receipt.fiscal,
+      createdAt: receipt.createdAt,
+      legalName: useFresh ? freshR.legalName : receipt.legalName,
+      inn: useFresh ? freshR.inn : receipt.inn,
+      address: useFresh ? freshR.address : receipt.address,
+      phone: useFresh ? freshR.receiptPhone : receipt.phone,
+      header: useFresh ? freshR.receiptHeader : receipt.header,
+      footer: useFresh ? freshR.receiptFooter : receipt.footer,
+      showQr: useFresh ? freshR.receiptShowQr : receipt.showQr,
+      showMxik: useFresh ? freshR.receiptShowMxik : receipt.showMxik,
+      paperWidth: useFresh ? freshR.receiptPaperWidth : receipt.paperWidth,
+      logoBytes: logoBytes,
+    );
+    final report =
+        await ref.read(printerServiceProvider).printReceipt(freshReceipt);
+    if (context.mounted && report.outcome != PrintOutcome.printed) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(report.message)));
+    }
+  }
+
+  /// Karta/QR to'lovi: fiskal holat final bo'lguncha (maks ~15s) fonda kutib,
+  /// chekni AVTOMATIK chop etadi — kassirga hech qanday dialog chiqmaydi.
+  Future<void> _autoPrintAfterFiscal(BuildContext context, WidgetRef ref,
+      ReceiptData receipt, CheckoutResult result) async {
+    var r = result;
+    final s0 = r.fiscal?.status.toLowerCase();
+    final needPoll = r.synced &&
+        r.orderId != null &&
+        s0 != 'sent' &&
+        s0 != 'success' &&
+        s0 != 'failed';
+    if (needPoll) {
+      final repo = ref.read(ordersRepositoryProvider);
+      for (var i = 0; i < 15; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        final f = await repo.fetchFiscal(r.orderId!);
+        if (f != null) {
+          r = r.copyWith(fiscal: f);
+          final s = f.status.toLowerCase();
+          if (s == 'sent' || s == 'success' || s == 'failed') break;
+        }
+      }
+      // F12 bilan qayta chop etilganда ham yangi QR chiqsin.
+      _lastResult = r;
+    }
+    if (!context.mounted) return;
+    try {
+      await _printFresh(context, ref, receipt, r);
+    } catch (_) {
+      // Chop etish yiqilsa savdo baribir yakunlangan — kassir F12 bilan
+      // qayta urinishi mumkin.
+      if (context.mounted) {
+        _toast(context, 'Chek chiqarilmadi — F12 bilan qayta urining');
+      }
+    }
+  }
+
+  /// XATO CHEK bannerли nusxa (soliq QRsiz) chop etiladi.
+  Future<void> _printErrorCopy(
+      WidgetRef ref, ReceiptData receipt, String reason) async {
+    final errCopy = ReceiptData(
+      restaurantName: receipt.restaurantName,
+      terminalName: receipt.terminalName,
+      orderNumber: receipt.orderNumber,
+      items: receipt.items,
+      subtotal: receipt.subtotal,
+      discount: receipt.discount,
+      total: receipt.total,
+      payments: receipt.payments,
+      fiscal: receipt.fiscal,
+      createdAt: receipt.createdAt,
+      legalName: receipt.legalName,
+      inn: receipt.inn,
+      address: receipt.address,
+      phone: receipt.phone,
+      header: receipt.header,
+      footer: receipt.footer,
+      // Xato chekда soliq QR kerak emas — u hisobga olinmaydi.
+      showQr: false,
+      showMxik: receipt.showMxik,
+      paperWidth: receipt.paperWidth,
+      isErrorCheck: true,
+      errorReason: reason,
+    );
+    await ref.read(printerServiceProvider).printReceipt(errCopy);
+  }
+
+  /// F11 — oxirgi TO'LANGAN chekni xato deb belgilash (dialog o'rniga).
+  Future<void> _markLastError(BuildContext context, WidgetRef ref) async {
+    final rec = _lastReceipt;
+    final res = _lastResult;
+    if (rec == null || res == null) {
+      _toast(context, 'Hali chek yo\'q');
+      return;
+    }
+    final r = await ErrorCheckDialog.show(context);
+    if (r == null) return;
+    var ok = false;
+    String? fiscalAction;
+    final oid = res.orderId;
+    if (oid != null) {
+      try {
+        final resp = await ref.read(dioClientProvider).post(
+          '/api/v2/pos-terminal/orders/$oid/mark-error',
+          data: {'reason': r.reason, 'note': r.note},
+        );
+        ok = true;
+        fiscalAction =
+            (resp.data is Map ? (resp.data as Map)['fiscal'] : null)?.toString();
+      } catch (_) {}
+    }
+    // Keyingi to'g'ri chek AYNAN shu raqamni oladi.
+    _lastErrorCheckNumber = (rec.orderNumber ?? '').replaceAll('#', '');
+    await _printErrorCopy(ref, rec, r.reason);
+    if (context.mounted) {
+      // Soliq holati ham ko'rsatiladi: qaytarish cheki ketdimi yoki fiskal
+      // umuman yuborilmasdan bekor qilindimi.
+      final soliq = switch (fiscalAction) {
+        'refund_queued' => ' · Soliqqa QAYTARISH cheki yuborildi',
+        'refund_exists' => ' · Qaytarish cheki avvalroq yuborilgan',
+        'cancelled' => ' · Fiskal chek soliqqa yuborilmasdan bekor qilindi',
+        _ => '',
+      };
+      _toast(
+          context,
+          ok
+              ? 'Xato chek deb belgilandi: ${r.reason}$soliq'
+              : 'Belgilandi (oflayn): ${r.reason}');
+    }
   }
 
   /// F2 — markirovka/shtrix skaner oynasi: skaner kodni yozadi + Enter →

@@ -76,6 +76,18 @@ class PrinterService {
     );
   }
 
+  /// Z-HISOBOT chekini chiqaradi (smena yopilganda).
+  Future<PrintReport> printZReport(List<int> bytes) async {
+    if (_config.printerUsb) return _sendLocal(bytes);
+    final host = _config.printerHost;
+    if (host != null && host.isNotEmpty) return _sendNetwork(host, bytes);
+    if (Platform.isWindows || Platform.isMacOS) return _sendLocal(bytes);
+    return const PrintReport(
+      PrintOutcome.noPrinter,
+      'Printer sozlanmagan — Z-hisobot faqat ekranda',
+    );
+  }
+
   /// Prints a short hardware test ticket through the configured transport.
   Future<PrintReport> printTest() async {
     final bytes = await ReceiptBuilder.buildTest(paperWidth: 80);

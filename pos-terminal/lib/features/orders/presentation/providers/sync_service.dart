@@ -7,6 +7,7 @@ import '../../../../core/providers/core_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../menu/presentation/providers/menu_providers.dart';
 import '../../../reports/presentation/providers/reports_providers.dart';
+import '../../../shift/presentation/providers/shift_providers.dart';
 import 'orders_providers.dart';
 
 class SyncState {
@@ -90,6 +91,10 @@ class SyncService extends StateNotifier<SyncState> {
       _ref.invalidate(salesSummaryProvider);
       _ref.invalidate(topProductsProvider);
       _ref.invalidate(failedOrdersProvider);
+      // Ish vaqti statistikasi (Jami savdo, Naqd, Karta, Buyurtmalar) shu
+      // provider'dan o'qiladi — sotuvlar sinxronlangach serverdagi smena
+      // jamlari o'zgargan, qayta so'ramasak ekranda nol bo'lib qoladi.
+      _ref.invalidate(currentShiftProvider);
       state = state.copyWith(
         syncing: false,
         lastSyncAt: DateTime.now(),
@@ -108,6 +113,7 @@ class SyncService extends StateNotifier<SyncState> {
     final synced = await _ref.read(ordersRepositoryProvider).syncPending();
     _ref.invalidate(recentOrdersProvider);
     _ref.invalidate(unsyncedCountProvider);
+    _ref.invalidate(currentShiftProvider);
     if (synced > 0) {
       state = state.copyWith(
         lastSyncAt: DateTime.now(),

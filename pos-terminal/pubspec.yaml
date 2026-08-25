@@ -2,7 +2,7 @@ name: aiba_pos_terminal
 description: "AIBA offline-first POS terminal (Windows + Android tablet) for the AIBA POS backend."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.11.4

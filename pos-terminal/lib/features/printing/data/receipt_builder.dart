@@ -24,6 +24,13 @@ class ReceiptBuilder {
     width: PosTextSize.size1,
     fontType: PosFontType.fontA,
   );
+  static const _bold = PosStyles(
+    align: PosAlign.left,
+    bold: true,
+    height: PosTextSize.size1,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
   static const _center = PosStyles(
     align: PosAlign.center,
     bold: false,
@@ -335,6 +342,79 @@ class ReceiptBuilder {
         styles: _center));
     bytes.addAll(g.text('To\'lovdan so\'ng chek avtomatik chiqadi',
         styles: _small));
+    bytes.addAll(g.feed(2));
+    bytes.addAll(g.cut());
+    return bytes;
+  }
+
+  /// Z-HISOBOT cheki — smena yopilganda chiqadi: to'lov turlari kesimi,
+  /// keldi-ketdi, rasxodlar, xato cheklar, kassa qoldig'i.
+  static Future<List<int>> buildZReport({
+    required String restaurantName,
+    required String shiftName,
+    required String? staffName,
+    required DateTime? openedAt,
+    required DateTime? closedAt,
+    required int ordersCount,
+    required num totalSales,
+    required num cash,
+    required num card,
+    required num click,
+    required num uzum,
+    required num keldi,
+    required num openingCash,
+    required num expenses,
+    required int errorChecks,
+    int paperWidth = 80,
+  }) async {
+    final profile = await CapabilityProfile.load();
+    final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
+    final g = Generator(paperSize, profile);
+    final cols = _cols(paperWidth);
+    final bytes = <int>[];
+    // Ikki ustunli qator: chapda nom, o'ngda qiymat (probel bilan tekislangan).
+    String row(String l, String r) {
+      final pad = cols - l.length - r.length;
+      return pad > 0 ? l + ' ' * pad + r : '$l $r';
+    }
+
+    bytes.addAll(g.reset());
+    bytes.addAll(g.text('Z-HISOBOT', styles: _title));
+    bytes.addAll(g.text(restaurantName, styles: _centerBold));
+    if (shiftName.isNotEmpty) bytes.addAll(g.text(shiftName, styles: _center));
+    if (openedAt != null) {
+      bytes.addAll(
+          g.text(row('Ochilgan:', _formatDate(openedAt.toLocal())), styles: _normal));
+    }
+    bytes.addAll(g.text(
+        row('Yopilgan:', _formatDate((closedAt ?? DateTime.now()).toLocal())),
+        styles: _normal));
+    if (staffName != null && staffName.isNotEmpty) {
+      bytes.addAll(g.text(row('Yopdi:', staffName), styles: _normal));
+    }
+    bytes.addAll(g.text('-' * cols, styles: _normal));
+    bytes.addAll(g.text(row('Buyurtmalar', '$ordersCount ta'), styles: _normal));
+    bytes.addAll(
+        g.text(row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _bold));
+    bytes.addAll(g.text('-' * cols, styles: _normal));
+    bytes.addAll(g.text(row('Naqd', Money.formatSom(cash)), styles: _normal));
+    bytes.addAll(g.text(row('Karta', Money.formatSom(card)), styles: _normal));
+    bytes.addAll(g.text(row('Click', Money.formatSom(click)), styles: _normal));
+    bytes.addAll(g.text(row('Uzum', Money.formatSom(uzum)), styles: _normal));
+    bytes.addAll(
+        g.text(row('Keldi-ketdi', Money.formatSom(keldi)), styles: _normal));
+    bytes.addAll(g.text('-' * cols, styles: _normal));
+    bytes.addAll(g.text(row('Boshlang\'ich kassa', Money.formatSom(openingCash)),
+        styles: _normal));
+    bytes.addAll(
+        g.text(row('Rasxodlar', Money.formatSom(expenses)), styles: _normal));
+    bytes.addAll(g.text(
+        row('Kassada naqd', Money.formatSom(openingCash + cash - expenses)),
+        styles: _bold));
+    bytes.addAll(
+        g.text(row('Xato cheklar', '$errorChecks ta'), styles: _normal));
+    bytes.addAll(g.text('=' * cols, styles: _normal));
+    bytes.addAll(g.text('Smena yopildi', styles: _center));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;

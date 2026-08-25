@@ -27,6 +27,8 @@ class PosNavRail extends StatelessWidget {
     required this.onSelect,
     required this.onSettings,
     this.settingsSelected = false,
+    this.showShift = true,
+    this.showSettings = true,
     this.footer,
   });
 
@@ -35,6 +37,14 @@ class PosNavRail extends StatelessWidget {
   final ValueChanged<int> onSelect;
   final VoidCallback onSettings;
   final bool settingsSelected;
+
+  /// false — kassir rejimi: "Ish vaqti" bo'limi ko'rsatilmaydi (smena
+  /// boshqaruvi faqat menejerda).
+  final bool showShift;
+
+  /// false — kassir rejimi: "Sozlamalar" ham ko'rsatilmaydi (server/printer
+  /// sozlamalarini faqat menejer o'zgartiradi).
+  final bool showSettings;
 
   /// Pastda ko'rinadigan qo'shimcha tugmalar (Yangilash + Avatar). Ular
   /// avval o'ng yuqorida suzib turardi va kichik oynada qidiruv ustiga
@@ -56,12 +66,13 @@ class PosNavRail extends StatelessWidget {
             selected: selectedIndex == 0,
             onTap: () => onSelect(0),
           ),
-          _NavItem(
-            iconAsset: 'assets/icons/nav_shift.svg',
-            label: 'Ish vaqti',
-            selected: selectedIndex == 1,
-            onTap: () => onSelect(1),
-          ),
+          if (showShift)
+            _NavItem(
+              iconAsset: 'assets/icons/nav_shift.svg',
+              label: 'Ish vaqti',
+              selected: selectedIndex == 1,
+              onTap: () => onSelect(1),
+            ),
           _NavItem(
             iconAsset: 'assets/icons/nav_delivery.svg',
             label: 'Yetkazib\nberish',
@@ -80,12 +91,13 @@ class PosNavRail extends StatelessWidget {
             ),
             const SizedBox(height: 10),
           ],
-          _NavItem(
-            iconAsset: 'assets/icons/nav_settings.svg',
-            label: 'Sozlamalar',
-            selected: settingsSelected,
-            onTap: onSettings,
-          ),
+          if (showSettings)
+            _NavItem(
+              iconAsset: 'assets/icons/nav_settings.svg',
+              label: 'Sozlamalar',
+              selected: settingsSelected,
+              onTap: onSettings,
+            ),
           const SizedBox(height: 10),
           // Kassir mishka ishlatmaydi — bo'limlar F10 bilan aylanadi.
           Container(
@@ -254,12 +266,15 @@ class PosAvatar extends StatelessWidget {
                 style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
           ),
-          const SizedBox(width: 4),
-          SvgPicture.asset('assets/icons/chevron_down.svg',
-              width: 18,
-              height: 18,
-              colorFilter:
-                  const ColorFilter.mode(Colors.white54, BlendMode.srcIn)),
+          // Kichik rejimda strelka ko'rsatilmaydi — avatar o'zi bosiladi.
+          if (!compact) ...[
+            const SizedBox(width: 4),
+            SvgPicture.asset('assets/icons/chevron_down.svg',
+                width: 18,
+                height: 18,
+                colorFilter:
+                    const ColorFilter.mode(Colors.white54, BlendMode.srcIn)),
+          ],
         ],
       ),
     );

@@ -68,6 +68,17 @@ class CartNotifier extends StateNotifier<Cart> {
     state = _orders[_active];
     _bumpTabs();
   }
+
+  /// To'lov yakunlangach: tab bir nechta bo'lsa aktivini YOPADI (kassir F7
+  /// bilan ochgan qo'shimcha zakaz to'langach o'zi yo'qoladi), yagona tab
+  /// bo'lsa shunchaki tozalanadi.
+  void finishActiveOrder() {
+    if (_orders.length > 1) {
+      closeOrder(_active);
+    } else {
+      clear();
+    }
+  }
 }
 
 final cartProvider =

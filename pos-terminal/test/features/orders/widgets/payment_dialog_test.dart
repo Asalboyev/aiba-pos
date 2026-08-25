@@ -23,16 +23,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('ortiq summa kiritilsa qaytim ko\'rsatiladi (kartada ham)',
+  testWidgets('kartada ortiq summa terib BO\'LMAYDI — qoldiqqa tushadi',
       (tester) async {
     await open(tester, 45600, PaymentMethod.card);
     expect(find.textContaining('Qaytim'), findsNothing);
 
+    // Kartadan 50 000 terishga urinish → avtomatik 45 600 ga tushadi
+    // (kartadan ortiq yechib "qaytim" berish yo'q).
     await tester.enterText(find.byType(TextField), '50000');
     await tester.pump();
 
-    expect(find.textContaining('Qaytim'), findsOneWidget);
-    expect(find.text('4 400 so\'m'), findsOneWidget);
+    expect(find.textContaining('Qaytim'), findsNothing);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, '45 600');
   });
 
   testWidgets('naqdda ham qaytim hisoblanadi', (tester) async {

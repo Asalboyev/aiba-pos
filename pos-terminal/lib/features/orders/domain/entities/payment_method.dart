@@ -3,6 +3,10 @@ enum PaymentMethod {
   cash('cash', 'Naqd'),
   card('card', 'Karta'),
   qr('qr', 'QR'),
+  // Click / Uzum — QR to'lovlari alohida hisoblanadi (admin panel va smena
+  // hisobotida har biri o'z ustunida ko'rinadi).
+  click('click', 'Click'),
+  uzum('uzum', 'Uzum'),
   // VIP mehmon (katta akalar pul to'lamaydi) — manager Telegram kodi bilan
   // tasdiqlanib, chek "keldi-ketdi" deb yopiladi (pul to'langanday).
   keldiKetdi('keldi_ketdi', 'Keldi-ketdi');
