@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -27,6 +28,7 @@ class ProductGrid extends ConsumerWidget {
     final cart = ref.read(cartProvider.notifier);
     final baseUrl = ref.read(appConfigProvider).baseUrl;
     final searching = ref.watch(searchQueryProvider).trim().isNotEmpty;
+    final sel = ref.watch(searchSelProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -86,6 +88,9 @@ class ProductGrid extends ConsumerWidget {
                         imageUrl: _absoluteUrl(baseUrl, p.imageUrl),
                         markingRequired: p.markingRequired,
                         outOfStock: p.outOfStock,
+                        // Qidiruvda ↑↓ bilan tanlangan katak — ko'k ramka.
+                        // Enter aynan shu mahsulotni qo'shadi.
+                        selected: searching && i == sel,
                         onTap: p.outOfStock
                             ? null
                             : () => _addToCart(context, cart, p),
@@ -156,11 +161,23 @@ Future<void> _submitSearch(BuildContext context, WidgetRef ref,
       );
   final t = term.toLowerCase();
   Product? hit;
-  // 1) ANIQ KOD mosligi — kassir aynan kodni teradi (asosiy oqim).
-  for (final p in all) {
-    if ((p.sku ?? '').toLowerCase() == t) {
-      hit = p;
-      break;
+  // 0) GRID ko'rsatib turgan ro'yxat + ↑↓ tanlovi — kassir EKRANDA ko'rgan
+  //    (ko'k ramkali) mahsulot qo'shiladi. Ikkita natijadan ikkinchisi kerak
+  //    bo'lsa ↓ bosib Enter — endi birinchisi adashib tushmaydi.
+  final visible = ref.read(filteredProductsProvider);
+  if (visible.isNotEmpty) {
+    final sel =
+        ref.read(searchSelProvider).clamp(0, visible.length - 1);
+    hit = visible[sel];
+  }
+  // 1) ANIQ KOD mosligi — grid bo'sh bo'lsa (masalan markirovkali mahsulot
+  //    menyuda ko'rinmaydi) eski zanjir ishlaydi.
+  if (hit == null) {
+    for (final p in all) {
+      if ((p.sku ?? '').toLowerCase() == t) {
+        hit = p;
+        break;
+      }
     }
   }
   // 2) Kod shu bilan boshlanadi.
@@ -282,7 +299,26 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
           const SizedBox(width: 10),
           Expanded(
             // Fizik klaviatura: F1 → fokus, kod/nom teriladi, Enter → savatga.
-            child: TextField(
+            // ↑↓ — natijalar orasida tanlov (ko'k ramka), Enter tanlanganini
+            // qo'shadi.
+            child: Focus(
+              onKeyEvent: (node, e) {
+                if (e is! KeyDownEvent) return KeyEventResult.ignored;
+                final n = ref.read(filteredProductsProvider).length;
+                if (n == 0) return KeyEventResult.ignored;
+                if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+                  ref.read(searchSelProvider.notifier).update(
+                      (s) => (s + 1) % n);
+                  return KeyEventResult.handled;
+                }
+                if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+                  ref.read(searchSelProvider.notifier).update(
+                      (s) => (s - 1 + n) % n);
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: TextField(
               controller: _c,
               focusNode: posSearchFocusNode,
               onChanged: (v) =>
@@ -302,6 +338,7 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
                     'F3 QR · F4 karta · F5 naqd · F7 yangi zakaz · F8/⇧F8 zakaz almashtirish · F9 xato chek/bekor · Del oxirgi qator',
                 hintStyle: TextStyle(color: Color(0xFF5C626A)),
               ),
+            ),
             ),
           ),
           if (q.isNotEmpty)
@@ -518,6 +555,7 @@ class _NoResults extends StatelessWidget {
 
 class _ProductCard extends StatefulWidget {
   const _ProductCard({
+    this.selected = false,
     required this.name,
     required this.price,
     required this.code,
@@ -533,6 +571,8 @@ class _ProductCard extends StatefulWidget {
   final String? imageUrl;
   final VoidCallback? onTap;
   final bool markingRequired;
+  /// Qidiruvda ↑↓ bilan tanlangan (Enter shu mahsulotni qo'shadi).
+  final bool selected;
   final bool outOfStock;
 
   @override
@@ -565,9 +605,13 @@ class _ProductCardState extends State<_ProductCard> {
             final narrow = cc.maxWidth < 165;
             return Container(
             decoration: BoxDecoration(
-              color: PosColors.card,
+              color: widget.selected
+                  ? PosColors.blue.withValues(alpha: 0.12)
+                  : PosColors.card,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: PosColors.cardBorder),
+              border: Border.all(
+                  color: widget.selected ? PosColors.blue : PosColors.cardBorder,
+                  width: widget.selected ? 2 : 1),
             ),
             padding: EdgeInsets.all(narrow ? 8 : 10),
             child: Column(

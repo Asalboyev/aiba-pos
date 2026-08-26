@@ -39,6 +39,27 @@ final selectedCategoryProvider = StateProvider<String?>((ref) => null);
 /// Qidiruv matni (mahsulot nomi bo'yicha).
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
+/// Qidiruv satridan MIQDOR qismini olib tashlab, sof atamani qaytaradi:
+/// "rec*10" → "rec", "3*cola" → "cola", "rec*" → "rec".
+/// Jonli filtr ham, Enter ham shundan foydalanadi — kassir "kod*10" deb
+/// yozayotganda grid BO'SHAB QOLMAYDI (avval butun satr bilan qidirilardi).
+String searchTermOf(String raw) {
+  var r = raw.trim();
+  final m1 = RegExp(r'^(\d+(?:[.,]\d+)?)\s*[*xх]\s*(.*)$').firstMatch(r);
+  if (m1 != null) return m1.group(2)!.trim();
+  final m2 = RegExp(r'^(.+?)\s*[*xх]\s*(\d*(?:[.,]\d+)?)$').firstMatch(r);
+  if (m2 != null) return m2.group(1)!.trim();
+  return r;
+}
+
+/// Qidiruvda klaviatura bilan TANLANGAN natija indeksi (↑↓ yuradi,
+/// Enter — shu tanlanganini savatga qo'shadi). Qidiruv matni o'zgarsa 0 ga
+/// qaytadi (provider searchQueryProvider'ni kuzatgani uchun avtomatik).
+final searchSelProvider = StateProvider<int>((ref) {
+  ref.watch(searchQueryProvider);
+  return 0;
+});
+
 /// Products filtered by the selected category AND the search query.
 final filteredProductsProvider = Provider<List<Product>>((ref) {
   final products = ref.watch(productsProvider).maybeWhen(
@@ -46,7 +67,7 @@ final filteredProductsProvider = Provider<List<Product>>((ref) {
         orElse: () => const <Product>[],
       );
   final selected = ref.watch(selectedCategoryProvider);
-  final q = ref.watch(searchQueryProvider).trim().toLowerCase();
+  final q = searchTermOf(ref.watch(searchQueryProvider)).toLowerCase();
   // MARKIROVKALI mahsulotlar menyuda KO'RINMAYDI: ular faqat F2 (skaner)
   // orqali qo'shiladi — kassir DataMatrix kodni o'qiydi, mahsulot avtomatik
   // savatga tushadi va kod soliqqa ketadi. Menyudan bosib qo'shsa kod
@@ -58,6 +79,16 @@ final filteredProductsProvider = Provider<List<Product>>((ref) {
   if (q.isNotEmpty) {
     // Nom + kod (SKU) + MXIK bo'yicha qidiramiz — kassir kodni tersa
     // mahsulot darrov topiladi (tez ishlash uchun).
+    // Saralash: kassir KO'RGAN birinchi katak = Enter qo'shadigan mahsulot.
+    // ANIQ kod mosligi > kod boshlanishi > nom boshlanishi > ichida uchraydi.
+    int rank(Product p) {
+      final sku = (p.sku ?? '').toLowerCase();
+      if (sku == q) return 0;
+      if (sku.isNotEmpty && sku.startsWith(q)) return 1;
+      if (p.name.toLowerCase().startsWith(q)) return 2;
+      return 3;
+    }
+
     list = list.where((p) {
       if (p.name.toLowerCase().contains(q)) return true;
       final sku = (p.sku ?? '').toLowerCase();
@@ -65,7 +96,8 @@ final filteredProductsProvider = Provider<List<Product>>((ref) {
       final mxik = (p.mxikCode ?? '').toLowerCase();
       if (mxik.isNotEmpty && mxik.contains(q)) return true;
       return false;
-    }).toList();
+    }).toList()
+      ..sort((a, b) => rank(a).compareTo(rank(b)));
   }
   return list;
 });
