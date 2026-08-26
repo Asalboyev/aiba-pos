@@ -33,6 +33,7 @@ class ShiftRemoteDataSource {
       errorChecksCount: (j['error_checks_count'] is num)
           ? (j['error_checks_count'] as num).toInt()
           : int.tryParse('${j['error_checks_count']}') ?? 0,
+      errorChecksTotal: num.tryParse('${j['error_checks_total']}') ?? 0,
       cardOnly: Money.parse(byMethod['card']),
       clickTotal: Money.parse(byMethod['click']),
       uzumTotal: Money.parse(byMethod['uzum']),

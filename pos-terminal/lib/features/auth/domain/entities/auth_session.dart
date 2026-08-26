@@ -13,6 +13,9 @@ class RestaurantInfo extends Equatable {
   final String? receiptFooter;
   final String? receiptPhone;
   final bool receiptShowQr;
+  /// Naqd chek fiskal FAQAT so'ralganda (F12)? false = naqd ham darhol
+  /// fiskal bo'lib QR bilan chiqadi (standart, eski xatti-harakat).
+  final bool cashFiscalOnDemand;
   final bool receiptShowMxik;
   final int receiptPaperWidth; // 58 yoki 80 (mm)
   /// Restoran fiskal rejimi (mock / epos / epos_terminal). epos_terminal
@@ -32,6 +35,7 @@ class RestaurantInfo extends Equatable {
     this.receiptFooter,
     this.receiptPhone,
     this.receiptShowQr = true,
+    this.cashFiscalOnDemand = false,
     this.receiptShowMxik = true,
     this.receiptPaperWidth = 80,
     this.fiscalProvider,

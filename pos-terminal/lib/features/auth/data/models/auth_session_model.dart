@@ -20,6 +20,7 @@ class AuthSessionModel {
         receiptFooter: r['receipt_footer']?.toString(),
         receiptPhone: r['receipt_phone']?.toString(),
         receiptShowQr: r['receipt_show_qr'] != false,
+        cashFiscalOnDemand: r['cash_fiscal_on_demand'] == true,
         receiptShowMxik: r['receipt_show_mxik'] != false,
         receiptPaperWidth: (r['receipt_paper_width'] is int)
             ? r['receipt_paper_width'] as int
@@ -56,6 +57,7 @@ class AuthSessionModel {
           'receipt_footer': s.restaurant.receiptFooter,
           'receipt_phone': s.restaurant.receiptPhone,
           'receipt_show_qr': s.restaurant.receiptShowQr,
+          'cash_fiscal_on_demand': s.restaurant.cashFiscalOnDemand,
           'receipt_show_mxik': s.restaurant.receiptShowMxik,
           'receipt_paper_width': s.restaurant.receiptPaperWidth,
         },

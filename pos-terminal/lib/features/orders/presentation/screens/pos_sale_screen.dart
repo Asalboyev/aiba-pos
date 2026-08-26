@@ -425,9 +425,14 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
       // chiqadi: mijozda xato chek bor, to'g'risi ham qo'lida bo'lishi kerak.
       final isCorrection = receipt.replacesErrorNumber != null;
       final offlineNote = result.synced ? '' : ' · Oflayn saqlandi';
-      if (cashOnly && !isCorrection) {
-        // Naqd: chek DARHOL chiqadi, lekin fiskal QRsiz — mijoz so'rasa
-        // kassir F12 bosadi (QR bilan to'liq nusxa chiqadi).
+      // Naqd oqimi RESTORAN SOZLAMASIGA bog'liq (har mijozda har xil):
+      //  - cash_fiscal_on_demand YOQILGAN: chek darhol QRsiz chiqadi, fiskal
+      //    faqat mijoz so'raganda (F12 ro'yxati) yuboriladi;
+      //  - O'CHIQ (standart): naqd ham karta kabi darhol fiskal bo'lib,
+      //    QR bilan chiqadi.
+      final onDemand =
+          ref.read(sessionProvider)?.restaurant.cashFiscalOnDemand ?? false;
+      if (cashOnly && !isCorrection && onDemand) {
         _toast(context, 'To\'landi ✓$offlineNote · Chek chiqarilmoqda');
         // ignore: unawaited_futures
         _printNoQrReceipt(context, ref, receipt);

@@ -430,6 +430,7 @@ class ReceiptBuilder {
     required num openingCash,
     required num expenses,
     required int errorChecks,
+    num errorTotal = 0,
     List<ZItem> items = const [],
     int paperWidth = 80,
   }) async {
@@ -476,8 +477,11 @@ class ReceiptBuilder {
           styles: _normal));
     }
     if (errorChecks > 0) {
-      bytes.addAll(
-          _tx(g, row('Xato cheklar', '$errorChecks ta'), styles: _normal));
+      // Soni + summasi: rahbar «qancha pul xatoga urilgan»ni chekда ko'radi.
+      bytes.addAll(_tx(g,
+          row('Xato cheklar ($errorChecks ta)',
+              '-${Money.formatSom(errorTotal)}'),
+          styles: _normal));
     }
     bytes.addAll(
         _tx(g, row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _bold));

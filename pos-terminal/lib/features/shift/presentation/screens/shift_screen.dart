@@ -154,6 +154,7 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
         openingCash: z.openingCash,
         expenses: z.expensesTotal,
         errorChecks: z.errorChecksCount,
+        errorTotal: z.errorChecksTotal,
         paperWidth: ses?.restaurant.receiptPaperWidth ?? 80,
       );
       await ref.read(printerServiceProvider).printZReport(bytes);
@@ -359,7 +360,9 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
       _CenterTile(value: '$ordersCount ta', label: 'Buyurtmalar'),
       _CenterTile(
           value: errorChecks > 0 ? '$errorChecks ta' : '-',
-          label: 'Bekor qilingan',
+          label: errorChecks > 0
+              ? 'Xato cheklar · ${Money.formatSom(shift?.errorChecksTotal ?? 0)}'
+              : 'Xato cheklar',
           valueColor: PosColors.red),
       _CenterTile(
           value: ordersCount > 0 ? Money.formatSom(avg) : '0 so\'m',

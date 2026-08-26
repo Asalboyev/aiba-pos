@@ -11,6 +11,8 @@ class Shift extends Equatable {
   final num totalSales;
   final int ordersCount;
   final int errorChecksCount;
+  /// Xato cheklar summasi — Z-hisobot va Ish vaqti'da alohida ko'rsatiladi.
+  final num errorChecksTotal;
 
   /// To'lov turlari kesimi (server `by_method`): karta terminali / Click /
   /// Uzum alohida — smena hisobotida har biri o'z ustunida.
@@ -33,6 +35,7 @@ class Shift extends Equatable {
     this.totalSales = 0,
     this.ordersCount = 0,
     this.errorChecksCount = 0,
+    this.errorChecksTotal = 0,
     this.cardOnly = 0,
     this.clickTotal = 0,
     this.uzumTotal = 0,
@@ -54,6 +57,7 @@ class Shift extends Equatable {
         totalSales,
         ordersCount,
         errorChecksCount,
+        errorChecksTotal,
         cardOnly,
         clickTotal,
         uzumTotal,
