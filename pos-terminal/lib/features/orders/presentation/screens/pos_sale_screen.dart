@@ -460,7 +460,12 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     try {
       rows = await ref.read(ordersRepositoryProvider).listUnfiscalized();
     } catch (_) {
-      if (context.mounted) _toast(context, 'Server bilan aloqa yo\'q');
+      // Eski serverda endpoint hali yo'q yoki tarmoq uzilgan — kassir
+      // ishlashda davom etadi, sessiya saqlanadi.
+      if (context.mounted) {
+        _toast(context,
+            'F12 ro\'yxati ochilmadi — server yangilanishi kerak yoki tarmoq yo\'q');
+      }
       return;
     }
     if (!context.mounted) return;

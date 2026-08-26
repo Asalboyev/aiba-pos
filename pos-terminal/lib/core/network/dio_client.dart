@@ -70,11 +70,12 @@ class DioClient {
     String path, {
     Map<String, dynamic>? query,
     bool noAuth = false,
+    bool noLogout = false,
   }) =>
       _wrap(() => _dio.get<T>(
             path,
             queryParameters: query,
-            options: Options(extra: {'noAuth': noAuth}),
+            options: Options(extra: {'noAuth': noAuth, 'noLogout': noLogout}),
           ));
 
   /// Fetch raw bytes (used for chek logosini yuklab, ESC/POS raster'ga o'girish).
@@ -98,11 +99,12 @@ class DioClient {
     String path, {
     Object? data,
     bool noAuth = false,
+    bool noLogout = false,
   }) =>
       _wrap(() => _dio.post<T>(
             path,
             data: data,
-            options: Options(extra: {'noAuth': noAuth}),
+            options: Options(extra: {'noAuth': noAuth, 'noLogout': noLogout}),
           ));
 
   Future<Response<T>> _wrap<T>(Future<Response<T>> Function() run) async {
@@ -126,7 +128,12 @@ class DioClient {
         if (code == 401 || code == 403) {
           // 401 on a token-bearing request = session expired (login itself is
           // noAuth, so a wrong PIN never triggers this).
-          if (code == 401 && e.requestOptions.extra['noAuth'] != true) {
+          // noLogout: ixtiyoriy so'rovlar (masalan F12 ro'yxati) 401 qaytarsa
+          // ham sessiya TUGATILMAYDI — eski serverda endpoint bo'lmasligi
+          // kassirni logout qilib yubormasin.
+          if (code == 401 &&
+              e.requestOptions.extra['noAuth'] != true &&
+              e.requestOptions.extra['noLogout'] != true) {
             onUnauthorized?.call();
           }
           return AuthFailure(detail);
