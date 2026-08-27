@@ -94,25 +94,7 @@ class CartPanel extends ConsumerWidget {
                     itemBuilder: (context, i) => _CartLine(
                       item: cart.items[i],
                       imageUrl: _absoluteUrl(baseUrl, cart.items[i].imageUrl),
-                      // Uzoq bosib o'chirish TASODIFIY bo'lishi mumkin
-                      // (sensorli ekranда barmoq bosilib turadi) — endi
-                      // o'chirilgani aytiladi va QAYTARISH tugmasi chiqadi.
-                      onRemove: () {
-                        final removed = cart.items[i];
-                        notifier.removeAt(i);
-                        ScaffoldMessenger.of(context)
-                          ..clearSnackBars()
-                          ..showSnackBar(SnackBar(
-                            content: Text(
-                                '"${removed.name}" savatdan o\'chirildi'),
-                            duration: const Duration(seconds: 5),
-                            behavior: SnackBarBehavior.floating,
-                            action: SnackBarAction(
-                              label: 'QAYTARISH',
-                              onPressed: () => notifier.insertAt(i, removed),
-                            ),
-                          ));
-                      },
+
                     ),
                   ),
           ),
@@ -245,22 +227,19 @@ class _OrderTab extends StatelessWidget {
   }
 }
 
-/// Savat qatori — bosilganda hech narsa chiqmaydi (dizayn talabi).
-/// O'chirish uchun uzoq bosiladi; tasodifiy o'chishdan himoya —
-/// pastda "QAYTARISH" tugmali xabar chiqadi (5 soniya).
+/// Savat qatori — BOSILGANDA (uzoq bosilganda ham) HECH NARSA bo'lmaydi:
+/// sensorli kassada tasodifan mahsulot o'chib ketmasligi uchun savatdan
+/// o'chirish faqat klaviaturadagi Delete bilan (oxirgi qator).
 class _CartLine extends StatelessWidget {
-  const _CartLine(
-      {required this.item, required this.imageUrl, required this.onRemove});
+  const _CartLine({required this.item, required this.imageUrl});
   final CartItem item;
   final String? imageUrl;
-  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
-        onLongPress: onRemove,
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
