@@ -155,6 +155,10 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
         expenses: z.expensesTotal,
         errorChecks: z.errorChecksCount,
         errorTotal: z.errorChecksTotal,
+        cashQrTotal: z.cashQrTotal,
+        cashQrCount: z.cashQrCount,
+        cashNoQrTotal: z.cashNoQrTotal,
+        cashNoQrCount: z.cashNoQrCount,
         paperWidth: ses?.restaurant.receiptPaperWidth ?? 80,
       );
       await ref.read(printerServiceProvider).printZReport(bytes);

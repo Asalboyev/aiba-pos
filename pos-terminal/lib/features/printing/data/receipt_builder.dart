@@ -431,6 +431,10 @@ class ReceiptBuilder {
     required num expenses,
     required int errorChecks,
     num errorTotal = 0,
+    num cashQrTotal = 0,
+    int cashQrCount = 0,
+    num cashNoQrTotal = 0,
+    int cashNoQrCount = 0,
     List<ZItem> items = const [],
     int paperWidth = 80,
   }) async {
@@ -505,6 +509,19 @@ class ReceiptBuilder {
     }
     if (cash == 0 && card == 0 && click == 0 && uzum == 0 && keldi == 0) {
       bytes.addAll(_tx(g, 'To\'lovlar bo\'lmagan', styles: _center));
+    }
+    // Naqd savdoning fiskal kesimi: menejer «naqdning qanchasi soliqda QR
+    // olgan» summasini Z-chekда ham ko'radi (masalan 5 ta x 100 000 = 500 000).
+    if (cashQrCount + cashNoQrCount > 0) {
+      bytes.addAll(_tx(g,
+          row('  Naqd QR bilan ($cashQrCount ta)', Money.formatSom(cashQrTotal)),
+          styles: _normal));
+      if (cashNoQrCount > 0) {
+        bytes.addAll(_tx(g,
+            row('  Naqd QRsiz ($cashNoQrCount ta)',
+                Money.formatSom(cashNoQrTotal)),
+            styles: _normal));
+      }
     }
     bytes.addAll(_tx(g, section('KASSA'), styles: _normal));
     bytes.addAll(_tx(g, row('Boshlang\'ich kassa', Money.formatSom(openingCash)),
