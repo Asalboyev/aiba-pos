@@ -28,27 +28,56 @@ class UnfiscalizedDialog extends StatefulWidget {
 }
 
 class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
-  late List<Map<String, dynamic>> _rows;
+  late List<Map<String, dynamic>> _all;
   int _selected = 0;
   String? _busyId;
+
+  /// Filtr: null = hammasi, false = QRsiz (naqd, fiskal yo'q), true = QR ✓.
+  bool? _fiscalFilter;
+
+  /// Qidiruv: chek raqami yoki summa boshlanishi bo'yicha.
+  final _search = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _rows = List.of(widget.orders);
+    _all = List.of(widget.orders);
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Ko'rinadigan qatorlar: filtr + qidiruv qo'llangan.
+  List<Map<String, dynamic>> get _rows {
+    final q = _search.text.trim().toLowerCase();
+    return _all.where((o) {
+      if (_fiscalFilter != null && (o['fiscal'] == true) != _fiscalFilter) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      final num_ = (o['number'] ?? '').toString().toLowerCase();
+      final total = (o['total'] ?? '').toString();
+      return num_.contains(q) || total.startsWith(q);
+    }).toList();
   }
 
   Future<void> _pick(int i) async {
-    if (_busyId != null || i < 0 || i >= _rows.length) return;
-    final order = _rows[i];
+    final rows = _rows;
+    if (_busyId != null || i < 0 || i >= rows.length) return;
+    final order = rows[i];
     setState(() => _busyId = order['id'] as String?);
     final ok = await widget.onFiscalize(order);
     if (!mounted) return;
     setState(() {
       _busyId = null;
-      // Tarix saqlanadi — qator O'CHMAYDI, faqat fiskal belgisi yangilanadi
-      // (yana kerak bo'lsa qayta chop etsa bo'ladi).
-      if (ok) _rows[i] = {...order, 'fiscal': true};
+      // Tarix saqlanadi — qator O'CHMAYDI, faqat fiskal belgisi yangilanadi.
+      if (ok) {
+        final j = _all.indexWhere((x) => x['id'] == order['id']);
+        if (j >= 0) _all[j] = {..._all[j], 'fiscal': true};
+      }
     });
   }
 
@@ -59,13 +88,14 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
       Navigator.of(context).pop();
       return KeyEventResult.handled;
     }
-    if (_rows.isEmpty) return KeyEventResult.ignored;
+    final n = _rows.length;
+    if (n == 0) return KeyEventResult.ignored;
     if (k == LogicalKeyboardKey.arrowDown) {
-      setState(() => _selected = (_selected + 1) % _rows.length);
+      setState(() => _selected = (_selected + 1) % n);
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.arrowUp) {
-      setState(() => _selected = (_selected - 1 + _rows.length) % _rows.length);
+      setState(() => _selected = (_selected - 1 + n) % n);
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
@@ -133,7 +163,73 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                   '(fiskal bo\'lmagani avval soliqqa yuboriladi).',
                   style: TextStyle(color: PosColors.muted, fontSize: 13),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
+                // 500-1000 zakazли kunda kerakli chek DARROV topilsin:
+                // raqam/summa terib qidirish + bir bosishда «QRsiz» filtri.
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: PosColors.card,
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(color: PosColors.cardBorder),
+                        ),
+                        child: TextField(
+                          controller: _search,
+                          autofocus: true,
+                          onChanged: (v) => setState(() => _selected = 0),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
+                          decoration: const InputDecoration(
+                            isCollapsed: true,
+                            border: InputBorder.none,
+                            hintText: 'Chek № yoki summa...',
+                            hintStyle: TextStyle(color: Color(0xFF5C626A)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    for (final f in const [
+                      (null, 'Hammasi'),
+                      (false, 'QRsiz'),
+                      (true, 'QR ✓'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: InkWell(
+                          onTap: () => setState(() {
+                            _fiscalFilter = f.$1;
+                            _selected = 0;
+                          }),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: _fiscalFilter == f.$1
+                                  ? PosColors.blue
+                                  : PosColors.card,
+                              borderRadius: BorderRadius.circular(8),
+                              border:
+                                  Border.all(color: PosColors.cardBorder),
+                            ),
+                            child: Text(f.$2,
+                                style: TextStyle(
+                                    color: _fiscalFilter == f.$1
+                                        ? Colors.white
+                                        : PosColors.muted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 if (_rows.isEmpty)
                   Container(
                     width: double.infinity,
@@ -143,8 +239,11 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                       color: PosColors.card,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Text('Bugun chek urilmagan',
-                        style: TextStyle(color: PosColors.muted)),
+                    child: Text(
+                        _all.isEmpty
+                            ? 'Bugun chek urilmagan'
+                            : 'Mos chek topilmadi — filtr/qidiruvni o\'zgartiring',
+                        style: const TextStyle(color: PosColors.muted)),
                   )
                 else
                   Flexible(
@@ -153,7 +252,7 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                       itemCount: _rows.length,
                       separatorBuilder: (a, b) => const SizedBox(height: 8),
                       itemBuilder: (ctx, i) {
-                        final o = _rows[i];
+                        final o = _rows[i]; // filtr+qidiruv qo'llangan
                         final sel = i == _selected;
                         final busy = _busyId == o['id'];
                         final fiscal = o['fiscal'] == true;

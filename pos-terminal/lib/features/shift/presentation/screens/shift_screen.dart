@@ -395,6 +395,22 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
         tileRows(miniTiles, compact),
         const SizedBox(height: 14),
         tileRows(payTiles, compact),
+        // Naqd savdoning fiskal kesimi: menejer «naqdning qanchasi soliqda
+        // QR olgan, qanchasi hali QRsiz» — bir qarashda. Cheklarning o'zi
+        // F12 (Cheklar tarixi) dan chiqariladi.
+        if ((shift?.cashQrCount ?? 0) + (shift?.cashNoQrCount ?? 0) > 0) ...[
+          const SizedBox(height: 14),
+          tileRows(<Widget>[
+            _MiniTile(
+                label: 'Naqd · QR chiqarilgan (${shift?.cashQrCount ?? 0} ta)',
+                value: Money.formatSom(shift?.cashQrTotal ?? 0),
+                valueColor: PosColors.green),
+            _MiniTile(
+                label: 'Naqd · QRsiz (${shift?.cashNoQrCount ?? 0} ta)',
+                value: Money.formatSom(shift?.cashNoQrTotal ?? 0),
+                valueColor: const Color(0xFFF5A623)),
+          ], compact),
+        ],
         const SizedBox(height: 14),
         // 5) Markazlashgan ko'rsatkichlar (Figma) — torда 3+2 bo'lib.
         tileRows(centerTiles, compact, perRow: 3),

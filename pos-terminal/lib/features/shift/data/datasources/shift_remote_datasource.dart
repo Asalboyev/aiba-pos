@@ -34,6 +34,10 @@ class ShiftRemoteDataSource {
           ? (j['error_checks_count'] as num).toInt()
           : int.tryParse('${j['error_checks_count']}') ?? 0,
       errorChecksTotal: num.tryParse('${j['error_checks_total']}') ?? 0,
+      cashQrTotal: num.tryParse('${j['cash_qr_total']}') ?? 0,
+      cashQrCount: int.tryParse('${j['cash_qr_count']}') ?? 0,
+      cashNoQrTotal: num.tryParse('${j['cash_noqr_total']}') ?? 0,
+      cashNoQrCount: int.tryParse('${j['cash_noqr_count']}') ?? 0,
       cardOnly: Money.parse(byMethod['card']),
       clickTotal: Money.parse(byMethod['click']),
       uzumTotal: Money.parse(byMethod['uzum']),
