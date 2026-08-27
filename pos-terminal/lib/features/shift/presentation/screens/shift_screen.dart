@@ -79,12 +79,15 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     return false;
   }
 
-  /// Smena nomi — 2 ta 12 soatlik smena: 12:00–00:00 kunduzgi, 00:00–12:00
-  /// tunggi. Ochilgan vaqtiga qarab aniqlanadi.
+  /// Smena nomi — restoran jadvali har xil bo'ladi (9:00/21:00, 12:00/00:00...),
+  /// shuning uchun qat'iy soat yozilmaydi: ochilgan vaqt kunduz (06–18) bo'lsa
+  /// «Kunduzgi», aks holda «Tunggi» + haqiqiy ochilish vaqti.
   static String _shiftName(DateTime? openedAt) {
     if (openedAt == null) return '';
-    final h = openedAt.toLocal().hour;
-    return h >= 12 ? 'Kunduzgi smena (12:00–00:00)' : 'Tunggi smena (00:00–12:00)';
+    final t = openedAt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final kind = (t.hour >= 6 && t.hour < 18) ? 'Kunduzgi' : 'Tunggi';
+    return '$kind smena (${two(t.hour)}:${two(t.minute)} dan)';
   }
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
