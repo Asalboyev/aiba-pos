@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../core/providers/core_providers.dart';
 import '../../../../core/utils/money.dart';
 import '../../../../core/utils/thousands_formatter.dart';
 import '../../../../core/widgets/pos_chrome.dart';
@@ -26,6 +27,9 @@ class ShiftScreen extends ConsumerStatefulWidget {
 
 class _ShiftScreenState extends ConsumerState<ShiftScreen> {
   Timer? _refresh;
+
+  /// Oxirgi yopilgan smena (Z) — printer xato bersa qayta chiqarish uchun.
+  Shift? _lastZ;
 
   @override
   void initState() {
@@ -126,6 +130,7 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
       // Z-HISOBOT cheki: smena kesimi (naqd/karta/Click/Uzum/keldi-ketdi,
       // rasxod, xato cheklar) qog'ozda. Fonda — printer sekin bo'lsa ham
       // oqim bloklanmaydi.
+      _lastZ = z;
       // ignore: unawaited_futures
       _printZReport(z);
     } catch (e) {
@@ -164,6 +169,34 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
       await ref.read(printerServiceProvider).printZReport(bytes);
     } catch (_) {
       if (mounted) _snack(context, 'Z-hisobot chop etilmadi (printer)');
+    }
+  }
+
+  /// «Sotilganlar» chekini chiqarish — menejer xohlasa (Z'ga kirmaydi).
+  Future<void> _printSoldItems(Shift shift) async {
+    try {
+      final ses = ref.read(sessionProvider);
+      final res = await ref.read(dioClientProvider).get(
+          '/api/v2/pos-terminal/reports/top-products?shift_id=${shift.id}&limit=100');
+      final list =
+          ((res.data is Map ? res.data['items'] : null) as List?) ?? const [];
+      final items = list
+          .map((e) => ZItem(
+                name: ((e as Map)['name'] ?? '').toString(),
+                qty: num.tryParse('${e['qty']}') ?? 0,
+                amount: num.tryParse('${e['amount']}') ?? 0,
+              ))
+          .toList();
+      final bytes = await ReceiptBuilder.buildSoldItems(
+        restaurantName: ses?.restaurant.name ?? 'AIBA',
+        shiftName: _shiftName(shift.openedAt),
+        items: items,
+        paperWidth: ses?.restaurant.receiptPaperWidth ?? 80,
+      );
+      final rep = await ref.read(printerServiceProvider).printZReport(bytes);
+      if (mounted) _snack(context, rep.message);
+    } catch (_) {
+      if (mounted) _snack(context, 'Sotilganlar cheki chiqmadi (printer/tarmoq)');
     }
   }
 
@@ -454,6 +487,34 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
             child: const Text('Smenani faqat menejer ochadi va yopadi',
                 style: TextStyle(color: PosColors.muted, fontSize: 14)),
           ),
+        // Menejer qo'shimcha cheklari: sotilganlar (istasa) va oxirgi Z
+        // nusxasi (printer xato bergan bo'lsa).
+        if (_isManager && (isOpen || _lastZ != null)) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            if (isOpen)
+              Expanded(
+                child: _BigButton(
+                  label: 'Sotilganlar cheki',
+                  icon: Icons.receipt_long,
+                  color: PosColors.card,
+                  textColor: Colors.white,
+                  onTap: () => _printSoldItems(shift),
+                ),
+              ),
+            if (isOpen && _lastZ != null) const SizedBox(width: 10),
+            if (_lastZ != null)
+              Expanded(
+                child: _BigButton(
+                  label: 'Oxirgi Z nusxasi',
+                  icon: Icons.print,
+                  color: PosColors.card,
+                  textColor: Colors.white,
+                  onTap: () => _printZReport(_lastZ!),
+                ),
+              ),
+          ]),
+        ],
         const SizedBox(height: 18),
         // 7) Amalga oshmagan buyurtmalar (Figma) — real ro'yxat.
         const _FailedOrdersSection(),

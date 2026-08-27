@@ -87,13 +87,6 @@ class ReceiptBuilder {
     width: PosTextSize.size1,
     fontType: PosFontType.fontA,
   );
-  static const _bold = PosStyles(
-    align: PosAlign.left,
-    bold: true,
-    height: PosTextSize.size1,
-    width: PosTextSize.size1,
-    fontType: PosFontType.fontA,
-  );
   static const _center = PosStyles(
     align: PosAlign.center,
     bold: false,
@@ -112,6 +105,22 @@ class ReceiptBuilder {
     align: PosAlign.center,
     bold: true,
     height: PosTextSize.size2, // balandligi 2x, ENI 1x — uzun nom ham sig'adi
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  // Z-HISOBOT stillari: butun hisobot BALANDLIGI 2x — menejer uzoqdan ham
+  // o'qiy oladi. Eni 1x qoladi (48 ustunli tekislash buzilmaydi).
+  static const _z = PosStyles(
+    align: PosAlign.left,
+    bold: false,
+    height: PosTextSize.size2,
+    width: PosTextSize.size1,
+    fontType: PosFontType.fontA,
+  );
+  static const _zBold = PosStyles(
+    align: PosAlign.left,
+    bold: true,
+    height: PosTextSize.size2,
     width: PosTextSize.size1,
     fontType: PosFontType.fontA,
   );
@@ -462,50 +471,50 @@ class ReceiptBuilder {
     bytes.addAll(_tx(g, 'Z-HISOBOT', styles: _title));
     bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
     if (shiftName.isNotEmpty) bytes.addAll(_tx(g, shiftName, styles: _center));
-    bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+    bytes.addAll(_tx(g, '=' * cols, styles: _z));
     if (openedAt != null) {
       bytes.addAll(
-          _tx(g, row('Ochilgan:', _formatDate(openedAt.toLocal())), styles: _normal));
+          _tx(g, row('Ochilgan:', _formatDate(openedAt.toLocal())), styles: _z));
     }
     bytes.addAll(_tx(g, 
         row('Yopilgan:', _formatDate((closedAt ?? DateTime.now()).toLocal())),
-        styles: _normal));
+        styles: _z));
     if (staffName != null && staffName.isNotEmpty) {
-      bytes.addAll(_tx(g, row('Yopdi:', staffName), styles: _normal));
+      bytes.addAll(_tx(g, row('Yopdi:', staffName), styles: _z));
     }
-    bytes.addAll(_tx(g, section('SAVDO'), styles: _normal));
-    bytes.addAll(_tx(g, row('Buyurtmalar', '$ordersCount ta'), styles: _normal));
+    bytes.addAll(_tx(g, section('SAVDO'), styles: _z));
+    bytes.addAll(_tx(g, row('Buyurtmalar', '$ordersCount ta'), styles: _z));
     if (ordersCount > 0) {
       bytes.addAll(_tx(g,
           row('O\'rtacha chek', Money.formatSom(totalSales / ordersCount)),
-          styles: _normal));
+          styles: _z));
     }
     if (errorChecks > 0) {
       // Soni + summasi: rahbar «qancha pul xatoga urilgan»ni chekда ko'radi.
       bytes.addAll(_tx(g,
           row('Xato cheklar ($errorChecks ta)',
               '-${Money.formatSom(errorTotal)}'),
-          styles: _normal));
+          styles: _z));
     }
     bytes.addAll(
-        _tx(g, row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _bold));
-    bytes.addAll(_tx(g, section('TO\'LOVLAR'), styles: _normal));
+        _tx(g, row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _zBold));
+    bytes.addAll(_tx(g, section('TO\'LOVLAR'), styles: _z));
     // Nol qatorlar chekni cho'zmaydi — faqat bo'lgan to'lov turlari.
     if (cash != 0) {
-      bytes.addAll(_tx(g, row('Naqd', Money.formatSom(cash)), styles: _normal));
+      bytes.addAll(_tx(g, row('Naqd', Money.formatSom(cash)), styles: _z));
     }
     if (card != 0) {
-      bytes.addAll(_tx(g, row('Karta', Money.formatSom(card)), styles: _normal));
+      bytes.addAll(_tx(g, row('Karta', Money.formatSom(card)), styles: _z));
     }
     if (click != 0) {
-      bytes.addAll(_tx(g, row('Click', Money.formatSom(click)), styles: _normal));
+      bytes.addAll(_tx(g, row('Click', Money.formatSom(click)), styles: _z));
     }
     if (uzum != 0) {
-      bytes.addAll(_tx(g, row('Uzum', Money.formatSom(uzum)), styles: _normal));
+      bytes.addAll(_tx(g, row('Uzum', Money.formatSom(uzum)), styles: _z));
     }
     if (keldi != 0) {
       bytes.addAll(
-          _tx(g, row('Keldi-ketdi', Money.formatSom(keldi)), styles: _normal));
+          _tx(g, row('Keldi-ketdi', Money.formatSom(keldi)), styles: _z));
     }
     if (cash == 0 && card == 0 && click == 0 && uzum == 0 && keldi == 0) {
       bytes.addAll(_tx(g, 'To\'lovlar bo\'lmagan', styles: _center));
@@ -515,27 +524,27 @@ class ReceiptBuilder {
     if (cashQrCount + cashNoQrCount > 0) {
       bytes.addAll(_tx(g,
           row('  Naqd QR bilan ($cashQrCount ta)', Money.formatSom(cashQrTotal)),
-          styles: _normal));
+          styles: _z));
       if (cashNoQrCount > 0) {
         bytes.addAll(_tx(g,
             row('  Naqd QRsiz ($cashNoQrCount ta)',
                 Money.formatSom(cashNoQrTotal)),
-            styles: _normal));
+            styles: _z));
       }
     }
-    bytes.addAll(_tx(g, section('KASSA'), styles: _normal));
+    bytes.addAll(_tx(g, section('KASSA'), styles: _z));
     bytes.addAll(_tx(g, row('Boshlang\'ich kassa', Money.formatSom(openingCash)),
-        styles: _normal));
-    bytes.addAll(_tx(g, row('+ Naqd savdo', Money.formatSom(cash)), styles: _normal));
+        styles: _z));
+    bytes.addAll(_tx(g, row('+ Naqd savdo', Money.formatSom(cash)), styles: _z));
     if (expenses != 0) {
       bytes.addAll(
-          _tx(g, row('- Rasxodlar', Money.formatSom(expenses)), styles: _normal));
+          _tx(g, row('- Rasxodlar', Money.formatSom(expenses)), styles: _z));
     }
     bytes.addAll(_tx(g, 
         row('KASSADA NAQD', Money.formatSom(openingCash + cash - expenses)),
-        styles: _bold));
+        styles: _zBold));
     if (items.isNotEmpty) {
-      bytes.addAll(_tx(g, section('SOTILGANLAR'), styles: _normal));
+      bytes.addAll(_tx(g, section('SOTILGANLAR'), styles: _z));
       for (final it in items) {
         // "3 x Osh" chapda, summasi o'ngda; uzun nom qisqartiriladi.
         final qty = _qty(it.qty);
@@ -545,12 +554,62 @@ class ReceiptBuilder {
         if (left.length > maxLeft && maxLeft > 3) {
           left = '${left.substring(0, maxLeft - 1)}.';
         }
-        bytes.addAll(_tx(g, row(left, amount), styles: _normal));
+        bytes.addAll(_tx(g, row(left, amount), styles: _z));
       }
     }
-    bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+    bytes.addAll(_tx(g, '=' * cols, styles: _z));
     bytes.addAll(_tx(g, 'Smena yopildi', styles: _centerBold));
     bytes.addAll(_tx(g, _formatDate(DateTime.now()), styles: _center));
+    bytes.addAll(g.feed(2));
+    bytes.addAll(g.cut());
+    return bytes;
+  }
+
+  /// «SOTILGANLAR» cheki — menejer XOHLASA alohida chiqaradi (Z-chekka
+  /// avtomatik kirmaydi, 500+ mahsulotda juda uzun bo'lardi): smenada qaysi
+  /// mahsulot qancha sotildi (soni x nomi = summa), oxirida JAMI.
+  static Future<List<int>> buildSoldItems({
+    required String restaurantName,
+    required String shiftName,
+    required List<ZItem> items,
+    int paperWidth = 80,
+  }) async {
+    final profile = await CapabilityProfile.load();
+    final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
+    final g = Generator(paperSize, profile);
+    final cols = _cols(paperWidth);
+    final bytes = <int>[];
+    String row(String l, String r) {
+      final pad = cols - l.length - r.length;
+      return pad > 0 ? l + ' ' * pad + r : '$l $r';
+    }
+
+    bytes.addAll(g.reset());
+    bytes.addAll(cp866Select);
+    bytes.addAll(_tx(g, 'SOTILGANLAR', styles: _title));
+    bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
+    if (shiftName.isNotEmpty) bytes.addAll(_tx(g, shiftName, styles: _center));
+    bytes.addAll(_tx(g, _formatDate(DateTime.now()), styles: _center));
+    bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+    num jami = 0;
+    for (final it in items) {
+      jami += it.amount;
+      final qty = _qty(it.qty);
+      final amount = Money.formatSom(it.amount);
+      var left = '$qty x ${it.name}';
+      final maxLeft = cols - amount.length - 1;
+      if (left.length > maxLeft && maxLeft > 3) {
+        left = '${left.substring(0, maxLeft - 1)}.';
+      }
+      bytes.addAll(_tx(g, row(left, amount), styles: _normal));
+    }
+    if (items.isEmpty) {
+      bytes.addAll(_tx(g, 'Hali savdo bo\'lmagan', styles: _center));
+    }
+    bytes.addAll(_tx(g, '=' * cols, styles: _normal));
+    bytes.addAll(
+        _tx(g, row('JAMI (${items.length} xil)', Money.formatSom(jami)),
+            styles: _zBold));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;
