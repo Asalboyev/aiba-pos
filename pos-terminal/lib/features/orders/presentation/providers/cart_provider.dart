@@ -39,6 +39,8 @@ class CartNotifier extends StateNotifier<Cart> {
   void decrement(int index) => _apply(state.decrement(index));
   void setQty(int index, num qty) => _apply(state.setQty(index, qty));
   void removeAt(int index) => _apply(state.removeAt(index));
+  void insertAt(int index, CartItem item) =>
+      _apply(state.insertAt(index, item));
   void setDiscount(num value) => _apply(state.setDiscount(value));
 
   /// Aktiv buyurtmani tozalaydi (to'lovdan keyin).

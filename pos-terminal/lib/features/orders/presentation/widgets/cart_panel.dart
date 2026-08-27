@@ -94,7 +94,25 @@ class CartPanel extends ConsumerWidget {
                     itemBuilder: (context, i) => _CartLine(
                       item: cart.items[i],
                       imageUrl: _absoluteUrl(baseUrl, cart.items[i].imageUrl),
-                      onRemove: () => notifier.removeAt(i),
+                      // Uzoq bosib o'chirish TASODIFIY bo'lishi mumkin
+                      // (sensorli ekranда barmoq bosilib turadi) — endi
+                      // o'chirilgani aytiladi va QAYTARISH tugmasi chiqadi.
+                      onRemove: () {
+                        final removed = cart.items[i];
+                        notifier.removeAt(i);
+                        ScaffoldMessenger.of(context)
+                          ..clearSnackBars()
+                          ..showSnackBar(SnackBar(
+                            content: Text(
+                                '"${removed.name}" savatdan o\'chirildi'),
+                            duration: const Duration(seconds: 5),
+                            behavior: SnackBarBehavior.floating,
+                            action: SnackBarAction(
+                              label: 'QAYTARISH',
+                              onPressed: () => notifier.insertAt(i, removed),
+                            ),
+                          ));
+                      },
                     ),
                   ),
           ),
@@ -227,8 +245,9 @@ class _OrderTab extends StatelessWidget {
   }
 }
 
-/// Savat qatori — bosilганда HECH NARSA chiqmaydi (dizayn talabi).
-/// O'chirish uchun uzoq bosiladi (jimgina o'chadi, oyna chiqmaydi).
+/// Savat qatori — bosilganda hech narsa chiqmaydi (dizayn talabi).
+/// O'chirish uchun uzoq bosiladi; tasodifiy o'chishdan himoya —
+/// pastda "QAYTARISH" tugmali xabar chiqadi (5 soniya).
 class _CartLine extends StatelessWidget {
   const _CartLine(
       {required this.item, required this.imageUrl, required this.onRemove});

@@ -146,6 +146,13 @@ class Cart extends Equatable {
     return copyWith(items: next);
   }
 
+  /// O'chirilgan qatorni QAYTARISH (undo) uchun — o'z joyiga qaytaradi.
+  Cart insertAt(int index, CartItem item) {
+    final i = index.clamp(0, items.length);
+    final next = [...items]..insert(i, item);
+    return copyWith(items: next);
+  }
+
   /// Discount is clamped to [0, subtotal].
   Cart setDiscount(num value) {
     final clamped = value < 0 ? 0 : (value > subtotal ? subtotal : value);
