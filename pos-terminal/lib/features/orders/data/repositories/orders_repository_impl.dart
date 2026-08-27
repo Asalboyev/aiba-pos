@@ -195,6 +195,9 @@ class OrdersRepositoryImpl implements OrdersRepository {
       _remote.listUnfiscalized();
 
   @override
+  Future<List<Map<String, dynamic>>> listHistory() => _remote.listHistory();
+
+  @override
   Future<Map<String, dynamic>> fetchOrderDetail(String orderId) =>
       _remote.fetchOrder(orderId);
 

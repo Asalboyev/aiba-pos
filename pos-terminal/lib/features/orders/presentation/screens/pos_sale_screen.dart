@@ -450,20 +450,25 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
     posSearchFocusNode.requestFocus();
   }
 
-  /// F12: serverdan fiskal qilinmagan naqd cheklar ro'yxatini olib dialog
-  /// ochadi. Tanlangani [_fiscalizeFromList] orqali fiskal qilinib chop etiladi.
+  /// F12: bugungi CHEKLAR TARIXI — mijoz keyin chek so'rasa kassir shu
+  /// yerdan qayta chop etadi. Tanlangani [_fiscalizeFromList] orqali
+  /// (kerak bo'lsa fiskal qilinib) QR bilan chiqadi.
   Future<void> _openUnfiscalized(BuildContext context, WidgetRef ref) async {
     List<Map<String, dynamic>> rows;
     try {
-      rows = await ref.read(ordersRepositoryProvider).listUnfiscalized();
+      rows = await ref.read(ordersRepositoryProvider).listHistory();
     } catch (_) {
-      // Eski serverda endpoint hali yo'q yoki tarmoq uzilgan — kassir
-      // ishlashda davom etadi, sessiya saqlanadi.
-      if (context.mounted) {
-        _toast(context,
-            'F12 ro\'yxati ochilmadi — server yangilanishi kerak yoki tarmoq yo\'q');
+      // Eski server: tarix endpointi yo'q — hech bo'lmasa fiskal
+      // qilinmaganlar ro'yxati bilan ishlaymiz.
+      try {
+        rows = await ref.read(ordersRepositoryProvider).listUnfiscalized();
+      } catch (_) {
+        if (context.mounted) {
+          _toast(context,
+              'F12 ro\'yxati ochilmadi — server yangilanishi kerak yoki tarmoq yo\'q');
+        }
+        return;
       }
-      return;
     }
     if (!context.mounted) return;
     await showDialog<void>(

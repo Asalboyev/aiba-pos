@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 import '../../../../core/utils/money.dart';
 import '../../../../core/widgets/pos_chrome.dart';
 
-/// F12 — bugungi FISKAL QILINMAGAN naqd cheklar ro'yxati.
-/// Kassir strelka bilan tanlab Enter bosadi (yoki sichqoncha) —
-/// [onFiscalize] chaqiriladi (server fiscalize + QR bilan chop etish).
-/// Muvaffaqiyatli bo'lsa qator ro'yxatdan O'CHADI. Esc — yopish.
+/// F12 — BUGUNGI CHEKLAR TARIXI. Mijoz keyinroq "chek bering" deb kelsa
+/// kassir shu ro'yxatdan topib qayta chop etadi:
+///  - fiskal QILINMAGAN (naqd) chek → tanlansa soliqqa yuborilib QR bilan
+///    chiqadi va belgisi ✓ ga o'zgaradi;
+///  - fiskal BOR chek → shunchaki QR bilan QAYTA chop etiladi.
+/// ↑↓ tanlash, Enter — chop etish, Esc — yopish.
 class UnfiscalizedDialog extends StatefulWidget {
   const UnfiscalizedDialog({
     super.key,
@@ -15,10 +17,10 @@ class UnfiscalizedDialog extends StatefulWidget {
     required this.onFiscalize,
   });
 
-  /// Serverdan kelgan ro'yxat: {id, number, total, created_at}.
+  /// Serverdan kelgan ro'yxat: {id, number, total, created_at, fiscal, methods}.
   final List<Map<String, dynamic>> orders;
 
-  /// true qaytarsa — fiskal + chop muvaffaqiyatli, qator olib tashlanadi.
+  /// true qaytarsa — fiskal + chop muvaffaqiyatli.
   final Future<bool> Function(Map<String, dynamic> order) onFiscalize;
 
   @override
@@ -44,11 +46,9 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
     if (!mounted) return;
     setState(() {
       _busyId = null;
-      if (ok) {
-        _rows.removeAt(i);
-        if (_selected >= _rows.length) _selected = _rows.length - 1;
-        if (_selected < 0) _selected = 0;
-      }
+      // Tarix saqlanadi — qator O'CHMAYDI, faqat fiskal belgisi yangilanadi
+      // (yana kerak bo'lsa qayta chop etsa bo'ladi).
+      if (ok) _rows[i] = {...order, 'fiscal': true};
     });
   }
 
@@ -82,6 +82,21 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
     return '${two(t.hour)}:${two(t.minute)}';
   }
 
+  /// To'lov turi qisqa yorlig'i: cash → Naqd, card → Karta ...
+  String _methods(Map<String, dynamic> o) {
+    final m = (o['methods'] ?? '').toString();
+    if (m.isEmpty) return '';
+    const names = {
+      'cash': 'Naqd',
+      'card': 'Karta',
+      'click': 'Click',
+      'qr': 'Click',
+      'uzum': 'Uzum',
+      'keldi_ketdi': 'Keldi-ketdi',
+    };
+    return m.split(',').map((x) => names[x.trim()] ?? x).toSet().join('+');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -91,7 +106,7 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
         autofocus: true,
         onKeyEvent: _onKey,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 600),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -101,7 +116,7 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                 Row(
                   children: [
                     const Expanded(
-                      child: Text('Fiskal chek (F12)',
+                      child: Text('Cheklar tarixi (F12)',
                           style: TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -114,8 +129,8 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                   ],
                 ),
                 const Text(
-                  'Bugungi fiskal qilinmagan naqd cheklar. Tanlang — soliqqa '
-                  'yuborilib QR bilan chiqadi.',
+                  'Bugungi to\'langan cheklar. Tanlang — QR bilan chop etiladi '
+                  '(fiskal bo\'lmagani avval soliqqa yuboriladi).',
                   style: TextStyle(color: PosColors.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 14),
@@ -128,7 +143,7 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                       color: PosColors.card,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Text('Fiskal kutayotgan naqd chek yo\'q',
+                    child: const Text('Bugun chek urilmagan',
                         style: TextStyle(color: PosColors.muted)),
                   )
                 else
@@ -137,10 +152,11 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                       shrinkWrap: true,
                       itemCount: _rows.length,
                       separatorBuilder: (a, b) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) {
+                      itemBuilder: (ctx, i) {
                         final o = _rows[i];
                         final sel = i == _selected;
                         final busy = _busyId == o['id'];
+                        final fiscal = o['fiscal'] == true;
                         return InkWell(
                           onTap: () {
                             setState(() => _selected = i);
@@ -166,10 +182,30 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                                     style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w700)),
-                                const SizedBox(width: 12),
-                                Text(_time(o['created_at'] as String?),
+                                const SizedBox(width: 10),
+                                Text(
+                                    '${_time(o['created_at'] as String?)} · ${_methods(o)}',
                                     style: const TextStyle(
                                         color: PosColors.muted, fontSize: 13)),
+                                const SizedBox(width: 8),
+                                // Fiskal holati: ✓ QR bor / QRsiz (naqd).
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: fiscal
+                                        ? PosColors.green.withValues(alpha: 0.15)
+                                        : const Color(0x33F5A623),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(fiscal ? 'QR ✓' : 'QRsiz',
+                                      style: TextStyle(
+                                          color: fiscal
+                                              ? PosColors.green
+                                              : const Color(0xFFF5A623),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700)),
+                                ),
                                 const Spacer(),
                                 if (busy)
                                   const SizedBox(
@@ -195,7 +231,7 @@ class _UnfiscalizedDialogState extends State<UnfiscalizedDialog> {
                     ),
                   ),
                 const SizedBox(height: 12),
-                const Text('↑↓ tanlash · Enter — fiskal + chek · Esc — yopish',
+                const Text('↑↓ tanlash · Enter — chek chiqarish · Esc — yopish',
                     style: TextStyle(color: PosColors.muted, fontSize: 12)),
               ],
             ),

@@ -27,6 +27,9 @@ abstract class OrdersRepository {
   /// Bugungi fiskal qilinmagan naqd cheklar (F12 ro'yxati).
   Future<List<Map<String, dynamic>>> listUnfiscalized();
 
+  /// Bugungi TO'LANGAN cheklar tarixi (F12) — qayta chop etish uchun.
+  Future<List<Map<String, dynamic>>> listHistory();
+
   /// Order to'liq detali (items + payments) — chekni qayta chop etish uchun.
   Future<Map<String, dynamic>> fetchOrderDetail(String orderId);
 }
