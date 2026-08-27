@@ -620,6 +620,8 @@ class ReceiptBuilder {
   /// summa shu chekdagi KARTA qatoriga teng bo'lishi kerak.
   static Future<List<int>> buildDayReport({
     required String restaurantName,
+    required DateTime date,
+    required bool fullDay,
     required int ordersCount,
     required num totalSales,
     required num cash,
@@ -645,8 +647,11 @@ class ReceiptBuilder {
     bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
+    final range = fullDay
+        ? "to'liq kun (00:00 — 24:00)"
+        : '00:00 — ${two(now.hour)}:${two(now.minute)}';
     bytes.addAll(_tx(g,
-        '${two(now.day)}.${two(now.month)}.${now.year} · 00:00 — ${two(now.hour)}:${two(now.minute)}',
+        '${two(date.day)}.${two(date.month)}.${date.year} · $range',
         styles: _center));
     bytes.addAll(_tx(g, '=' * cols, styles: _z));
     bytes.addAll(_tx(g, row('Buyurtmalar', '$ordersCount ta'), styles: _z));

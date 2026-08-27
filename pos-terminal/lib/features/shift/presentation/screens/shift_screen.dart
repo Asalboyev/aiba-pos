@@ -203,19 +203,51 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     }
   }
 
-  /// «KUN HISOBOTI» cheki — 00:00 dan hozirgacha (bank terminal
-  /// «закрытие дня»si bilan solishtirish uchun, smenalardan qat'i nazar).
+  /// «KUN HISOBOTI» — avval kun tanlanadi: Bugun (00:00 dan hozirgacha)
+  /// yoki Kecha (to'liq kun). Tungi smenada yarim tundan keyin bank
+  /// terminali bilan solishtirish uchun «Kecha» kerak bo'ladi.
   Future<void> _printDayReport() async {
+    final choice = await showDialog<int>(
+      context: context,
+      builder: (dctx) => SimpleDialog(
+        backgroundColor: PosColors.panel,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Kun hisoboti',
+            style: TextStyle(color: Colors.white)),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dctx, 0),
+            child: const Text('1 · Bugun (00:00 dan hozirgacha)',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dctx, 1),
+            child: const Text('2 · Kecha (to\'liq kun)',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+    await _printDayReportFor(daysAgo: choice);
+  }
+
+  Future<void> _printDayReportFor({required int daysAgo}) async {
     try {
       final ses = ref.read(sessionProvider);
-      final res = await ref
-          .read(dioClientProvider)
-          .get('/api/v2/pos-terminal/reports/sales-summary');
+      final day = DateTime.now().subtract(Duration(days: daysAgo));
+      final ymd =
+          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final res = await ref.read(dioClientProvider).get(
+          '/api/v2/pos-terminal/reports/sales-summary?date_from=$ymd&date_to=$ymd');
       final d = (res.data as Map?)?.cast<String, dynamic>() ?? const {};
       final bm = (d['by_method'] as Map?)?.cast<String, dynamic>() ?? const {};
       num n(dynamic v) => num.tryParse('$v') ?? 0;
       final bytes = await ReceiptBuilder.buildDayReport(
         restaurantName: ses?.restaurant.name ?? 'AIBA',
+        date: day,
+        fullDay: daysAgo > 0,
         ordersCount: int.tryParse('${d['orders_count']}') ?? 0,
         totalSales: n(d['total_sales']),
         cash: n(bm['cash']),
