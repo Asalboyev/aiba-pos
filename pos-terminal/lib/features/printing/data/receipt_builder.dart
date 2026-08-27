@@ -615,6 +615,61 @@ class ReceiptBuilder {
     return bytes;
   }
 
+  /// «KUN HISOBOTI» cheki — kalendar kun (00:00 dan hozirgacha) kesimi.
+  /// Bank terminalining «закрытие дня»si bilan solishtirish uchun: undagi
+  /// summa shu chekdagi KARTA qatoriga teng bo'lishi kerak.
+  static Future<List<int>> buildDayReport({
+    required String restaurantName,
+    required int ordersCount,
+    required num totalSales,
+    required num cash,
+    required num card,
+    required num click,
+    required num uzum,
+    required num keldi,
+    int paperWidth = 80,
+  }) async {
+    final profile = await CapabilityProfile.load();
+    final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
+    final g = Generator(paperSize, profile);
+    final cols = _cols(paperWidth);
+    final bytes = <int>[];
+    String row(String l, String r) {
+      final pad = cols - l.length - r.length;
+      return pad > 0 ? l + ' ' * pad + r : '$l $r';
+    }
+
+    bytes.addAll(g.reset());
+    bytes.addAll(cp866Select);
+    bytes.addAll(_tx(g, 'KUN HISOBOTI', styles: _title));
+    bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    bytes.addAll(_tx(g,
+        '${two(now.day)}.${two(now.month)}.${now.year} · 00:00 — ${two(now.hour)}:${two(now.minute)}',
+        styles: _center));
+    bytes.addAll(_tx(g, '=' * cols, styles: _z));
+    bytes.addAll(_tx(g, row('Buyurtmalar', '$ordersCount ta'), styles: _z));
+    bytes.addAll(
+        _tx(g, row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _zBold));
+    bytes.addAll(_tx(g, '-' * cols, styles: _z));
+    bytes.addAll(_tx(g, row('Naqd', Money.formatSom(cash)), styles: _z));
+    bytes.addAll(_tx(g, row('KARTA', Money.formatSom(card)), styles: _zBold));
+    bytes.addAll(_tx(g, row('Click', Money.formatSom(click)), styles: _z));
+    bytes.addAll(_tx(g, row('Uzum', Money.formatSom(uzum)), styles: _z));
+    if (keldi != 0) {
+      bytes.addAll(
+          _tx(g, row('Keldi-ketdi', Money.formatSom(keldi)), styles: _z));
+    }
+    bytes.addAll(_tx(g, '=' * cols, styles: _z));
+    bytes.addAll(_tx(g, 'KARTA qatorini bank terminalining', styles: _center));
+    bytes.addAll(
+        _tx(g, '"закрытие дня" summasi bilan solishtiring', styles: _center));
+    bytes.addAll(g.feed(2));
+    bytes.addAll(g.cut());
+    return bytes;
+  }
+
   static Future<List<int>> buildTest({int paperWidth = 80}) async {
     final profile = await CapabilityProfile.load();
     final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;

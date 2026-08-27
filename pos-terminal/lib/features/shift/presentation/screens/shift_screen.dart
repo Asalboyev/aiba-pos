@@ -203,6 +203,35 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     }
   }
 
+  /// «KUN HISOBOTI» cheki — 00:00 dan hozirgacha (bank terminal
+  /// «закрытие дня»si bilan solishtirish uchun, smenalardan qat'i nazar).
+  Future<void> _printDayReport() async {
+    try {
+      final ses = ref.read(sessionProvider);
+      final res = await ref
+          .read(dioClientProvider)
+          .get('/api/v2/pos-terminal/reports/sales-summary');
+      final d = (res.data as Map?)?.cast<String, dynamic>() ?? const {};
+      final bm = (d['by_method'] as Map?)?.cast<String, dynamic>() ?? const {};
+      num n(dynamic v) => num.tryParse('$v') ?? 0;
+      final bytes = await ReceiptBuilder.buildDayReport(
+        restaurantName: ses?.restaurant.name ?? 'AIBA',
+        ordersCount: int.tryParse('${d['orders_count']}') ?? 0,
+        totalSales: n(d['total_sales']),
+        cash: n(bm['cash']),
+        card: n(bm['card']),
+        click: n(bm['click']),
+        uzum: n(bm['uzum']),
+        keldi: n(bm['keldi_ketdi']),
+        paperWidth: ses?.restaurant.receiptPaperWidth ?? 80,
+      );
+      final rep = await ref.read(printerServiceProvider).printZReport(bytes);
+      if (mounted) _snack(context, rep.message);
+    } catch (_) {
+      if (mounted) _snack(context, 'Kun hisoboti chiqmadi (printer/tarmoq)');
+    }
+  }
+
   void _snack(BuildContext context, String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
@@ -492,9 +521,19 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
           ),
         // Menejer qo'shimcha cheklari: sotilganlar (istasa) va oxirgi Z
         // nusxasi (printer xato bergan bo'lsa).
-        if (_isManager && (isOpen || _lastZ != null)) ...[
+        if (_isManager) ...[
           const SizedBox(height: 10),
           Row(children: [
+            Expanded(
+              child: _BigButton(
+                label: 'Kun hisoboti',
+                icon: Icons.today,
+                color: PosColors.card,
+                textColor: Colors.white,
+                onTap: _printDayReport,
+              ),
+            ),
+            if (isOpen) const SizedBox(width: 10),
             if (isOpen)
               Expanded(
                 child: _BigButton(
