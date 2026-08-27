@@ -50,17 +50,20 @@ void main() {
       expect(cart.items.first.qty, 1);
     });
 
-    test('decrementing to zero removes the line', () {
+    // Savatdan o'chirish YO'Q (nazorat talabi): miqdor 0 ga tushsa qator
+    // O'CHMAYDI — minimal 1 da qoladi. Bekor qilish faqat F9 (xato chek).
+    test('decrementing to zero KEEPS the line at qty 1', () {
       var cart = const Cart().addProduct(burger);
       cart = cart.decrement(0);
-      expect(cart.items, isEmpty);
-      expect(cart.isEmpty, isTrue);
+      expect(cart.items.length, 1);
+      expect(cart.items.first.qty, 1);
     });
 
-    test('setQty to 0 removes the line', () {
+    test('setQty to 0 KEEPS the line at qty 1', () {
       var cart = const Cart().addProduct(cola);
       cart = cart.setQty(0, 0);
-      expect(cart.items, isEmpty);
+      expect(cart.items.length, 1);
+      expect(cart.items.first.qty, 1);
     });
 
     test('removeAt removes the correct line', () {

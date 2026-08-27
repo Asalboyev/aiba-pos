@@ -335,7 +335,7 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
                 border: InputBorder.none,
                 hintText:
                     'F1 kod/nom · kod*3 miqdor · Enter savatga · F2 skaner · '
-                    'F3 QR · F4 karta · F5 naqd · F7 yangi zakaz · F8/⇧F8 zakaz almashtirish · F9 xato chek/bekor · Del oxirgi qator',
+                    'F3 QR · F4 karta · F5 naqd · F7 yangi zakaz · F8/⇧F8 zakaz almashtirish · F9 xato chek/bekor',
                 hintStyle: TextStyle(color: Color(0xFF5C626A)),
               ),
             ),

@@ -146,17 +146,9 @@ class _PosSaleScreenState extends ConsumerState<PosSaleScreen> {
       _markLastError(context, ref);
       return true;
     }
-    // Savatdagi oxirgi qatorni o'chirish — Delete/Backspace (qidiruv bo'sh
-    // bo'lsagina, aks holda matn tahriri buzilmasin).
-    if ((k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) &&
-        !posSearchFocusNode.hasFocus) {
-      final cart = ref.read(cartProvider);
-      if (cart.items.isNotEmpty) {
-        notifier.removeAt(cart.items.length - 1);
-        _toast(context, 'Oxirgi qator o\'chirildi');
-      }
-      return true;
-    }
+    // Savatdan O'CHIRISH YO'Q (ataylab): urilgan mahsulot faqat butun
+    // chekni XATO (F9) qilib yopish orqali bekor bo'ladi — kassir
+    // yashirincha qator olib tashlay olmasin (nazorat talabi).
     return false;
   }
 
