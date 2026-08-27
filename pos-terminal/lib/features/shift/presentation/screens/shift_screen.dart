@@ -144,9 +144,24 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
   Future<void> _printZReport(Shift z) async {
     try {
       final ses = ref.read(sessionProvider);
-      // "Sotilganlar" ro'yxati Z-chekka QO'SHILMAYDI — mahsulot ko'p
-      // restoranда chek juda uzun bo'lib ketadi (foydalanuvchi talabi).
+      // SOTILGANLAR TO'LIQ ro'yxati Z-chekka kiradi (foydalanuvchi talabi:
+      // smena yopilganda nima sotilgani to'liq chiqsin).
+      var items = const <ZItem>[];
+      try {
+        final res = await ref.read(dioClientProvider).get(
+            '/api/v2/pos-terminal/reports/top-products?shift_id=${z.id}&limit=200');
+        final list =
+            ((res.data is Map ? res.data['items'] : null) as List?) ?? const [];
+        items = list
+            .map((e) => ZItem(
+                  name: ((e as Map)['name'] ?? '').toString(),
+                  qty: num.tryParse('${e['qty']}') ?? 0,
+                  amount: num.tryParse('${e['amount']}') ?? 0,
+                ))
+            .toList();
+      } catch (_) {}
       final bytes = await ReceiptBuilder.buildZReport(
+        items: items,
         restaurantName: ses?.restaurant.name ?? 'AIBA',
         shiftName: _shiftName(z.openedAt),
         staffName: ses?.staff.name,
@@ -203,51 +218,48 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
     }
   }
 
-  /// «KUN HISOBOTI» — avval kun tanlanadi: Bugun (00:00 dan hozirgacha)
-  /// yoki Kecha (to'liq kun). Tungi smenada yarim tundan keyin bank
-  /// terminali bilan solishtirish uchun «Kecha» kerak bo'ladi.
+  /// «KUN HISOBOTI» (zakrit den) — Z-hisobot bilan BIR XIL shakl, faqat
+  /// KUN kesimi (00:00 dan hozirgacha): SAVDO / TO'LOVLAR (+naqd QR kesimi)
+  /// / Rasxodlar / SOTILGANLAR to'liq. KARTA qatori bank terminalining
+  /// закрытие дня'si bilan solishtiriladi.
   Future<void> _printDayReport() async {
-    final choice = await showDialog<int>(
-      context: context,
-      builder: (dctx) => SimpleDialog(
-        backgroundColor: PosColors.panel,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Kun hisoboti',
-            style: TextStyle(color: Colors.white)),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dctx, 0),
-            child: const Text('1 · Bugun (00:00 dan hozirgacha)',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dctx, 1),
-            child: const Text('2 · Kecha (to\'liq kun)',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
-        ],
-      ),
-    );
-    if (choice == null) return;
-    await _printDayReportFor(daysAgo: choice);
-  }
-
-  Future<void> _printDayReportFor({required int daysAgo}) async {
     try {
       final ses = ref.read(sessionProvider);
-      final day = DateTime.now().subtract(Duration(days: daysAgo));
-      final ymd =
-          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-      final res = await ref.read(dioClientProvider).get(
-          '/api/v2/pos-terminal/reports/sales-summary?date_from=$ymd&date_to=$ymd');
+      final now = DateTime.now();
+      String two(int x) => x.toString().padLeft(2, '0');
+      final res = await ref
+          .read(dioClientProvider)
+          .get('/api/v2/pos-terminal/reports/sales-summary');
+      // Kunning sotilgan mahsulotlari — to'liq ro'yxat.
+      var items = const <ZItem>[];
+      try {
+        final tp = await ref.read(dioClientProvider).get(
+            '/api/v2/pos-terminal/reports/top-products?limit=200');
+        final list =
+            ((tp.data is Map ? tp.data['items'] : null) as List?) ?? const [];
+        items = list
+            .map((e) => ZItem(
+                  name: ((e as Map)['name'] ?? '').toString(),
+                  qty: num.tryParse('${e['qty']}') ?? 0,
+                  amount: num.tryParse('${e['amount']}') ?? 0,
+                ))
+            .toList();
+      } catch (_) {}
       final d = (res.data as Map?)?.cast<String, dynamic>() ?? const {};
       final bm = (d['by_method'] as Map?)?.cast<String, dynamic>() ?? const {};
       num n(dynamic v) => num.tryParse('$v') ?? 0;
-      final bytes = await ReceiptBuilder.buildDayReport(
+      final bytes = await ReceiptBuilder.buildZReport(
+        title: 'KUN HISOBOTI',
+        showKassa: false,
+        footerNote:
+            'KARTA qatorini bank terminalining\n"закрытие дня" summasi bilan solishtiring',
         restaurantName: ses?.restaurant.name ?? 'AIBA',
-        date: day,
-        fullDay: daysAgo > 0,
+        shiftName:
+            '${two(now.day)}.${two(now.month)}.${now.year} · 00:00 — ${two(now.hour)}:${two(now.minute)}',
+        staffName: null,
+        openedAt: null,
+        closedAt: now,
+        items: items,
         ordersCount: int.tryParse('${d['orders_count']}') ?? 0,
         totalSales: n(d['total_sales']),
         cash: n(bm['cash']),
@@ -255,6 +267,14 @@ class _ShiftScreenState extends ConsumerState<ShiftScreen> {
         click: n(bm['click']),
         uzum: n(bm['uzum']),
         keldi: n(bm['keldi_ketdi']),
+        openingCash: 0,
+        expenses: n(d['expenses_total']),
+        errorChecks: int.tryParse('${d['error_checks_count']}') ?? 0,
+        errorTotal: n(d['error_checks_total']),
+        cashQrTotal: n(d['cash_qr_total']),
+        cashQrCount: int.tryParse('${d['cash_qr_count']}') ?? 0,
+        cashNoQrTotal: n(d['cash_noqr_total']),
+        cashNoQrCount: int.tryParse('${d['cash_noqr_count']}') ?? 0,
         paperWidth: ses?.restaurant.receiptPaperWidth ?? 80,
       );
       final rep = await ref.read(printerServiceProvider).printZReport(bytes);

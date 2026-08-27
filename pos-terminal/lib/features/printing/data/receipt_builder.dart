@@ -424,6 +424,9 @@ class ReceiptBuilder {
   /// Z-HISOBOT cheki — smena yopilganda chiqadi: to'lov turlari kesimi,
   /// keldi-ketdi, rasxodlar, xato cheklar, kassa qoldig'i.
   static Future<List<int>> buildZReport({
+    String title = 'Z-HISOBOT',
+    bool showKassa = true,
+    String? footerNote,
     required String restaurantName,
     required String shiftName,
     required String? staffName,
@@ -468,7 +471,7 @@ class ReceiptBuilder {
 
     bytes.addAll(g.reset());
     bytes.addAll(cp866Select);
-    bytes.addAll(_tx(g, 'Z-HISOBOT', styles: _title));
+    bytes.addAll(_tx(g, title, styles: _title));
     bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
     if (shiftName.isNotEmpty) bytes.addAll(_tx(g, shiftName, styles: _center));
     bytes.addAll(_tx(g, '=' * cols, styles: _z));
@@ -532,6 +535,7 @@ class ReceiptBuilder {
             styles: _z));
       }
     }
+    if (showKassa) {
     bytes.addAll(_tx(g, section('KASSA'), styles: _z));
     bytes.addAll(_tx(g, row('Boshlang\'ich kassa', Money.formatSom(openingCash)),
         styles: _z));
@@ -543,6 +547,11 @@ class ReceiptBuilder {
     bytes.addAll(_tx(g, 
         row('KASSADA NAQD', Money.formatSom(openingCash + cash - expenses)),
         styles: _zBold));
+    } else if (expenses != 0) {
+      // Kun hisobotida KASSA bo'limi yo'q, lekin kun rasxodlari ko'rinadi.
+      bytes.addAll(
+          _tx(g, row('Rasxodlar', Money.formatSom(expenses)), styles: _z));
+    }
     if (items.isNotEmpty) {
       bytes.addAll(_tx(g, section('SOTILGANLAR'), styles: _z));
       for (final it in items) {
@@ -558,8 +567,14 @@ class ReceiptBuilder {
       }
     }
     bytes.addAll(_tx(g, '=' * cols, styles: _z));
-    bytes.addAll(_tx(g, 'Smena yopildi', styles: _centerBold));
-    bytes.addAll(_tx(g, _formatDate(DateTime.now()), styles: _center));
+    if (footerNote != null) {
+      for (final line in footerNote.split('\n')) {
+        bytes.addAll(_tx(g, line, styles: _center));
+      }
+    } else {
+      bytes.addAll(_tx(g, 'Smena yopildi', styles: _centerBold));
+      bytes.addAll(_tx(g, _formatDate(DateTime.now()), styles: _center));
+    }
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;
@@ -610,66 +625,6 @@ class ReceiptBuilder {
     bytes.addAll(
         _tx(g, row('JAMI (${items.length} xil)', Money.formatSom(jami)),
             styles: _zBold));
-    bytes.addAll(g.feed(2));
-    bytes.addAll(g.cut());
-    return bytes;
-  }
-
-  /// «KUN HISOBOTI» cheki — kalendar kun (00:00 dan hozirgacha) kesimi.
-  /// Bank terminalining «закрытие дня»si bilan solishtirish uchun: undagi
-  /// summa shu chekdagi KARTA qatoriga teng bo'lishi kerak.
-  static Future<List<int>> buildDayReport({
-    required String restaurantName,
-    required DateTime date,
-    required bool fullDay,
-    required int ordersCount,
-    required num totalSales,
-    required num cash,
-    required num card,
-    required num click,
-    required num uzum,
-    required num keldi,
-    int paperWidth = 80,
-  }) async {
-    final profile = await CapabilityProfile.load();
-    final paperSize = paperWidth == 58 ? PaperSize.mm58 : PaperSize.mm80;
-    final g = Generator(paperSize, profile);
-    final cols = _cols(paperWidth);
-    final bytes = <int>[];
-    String row(String l, String r) {
-      final pad = cols - l.length - r.length;
-      return pad > 0 ? l + ' ' * pad + r : '$l $r';
-    }
-
-    bytes.addAll(g.reset());
-    bytes.addAll(cp866Select);
-    bytes.addAll(_tx(g, 'KUN HISOBOTI', styles: _title));
-    bytes.addAll(_tx(g, restaurantName, styles: _centerBold));
-    final now = DateTime.now();
-    String two(int n) => n.toString().padLeft(2, '0');
-    final range = fullDay
-        ? "to'liq kun (00:00 — 24:00)"
-        : '00:00 — ${two(now.hour)}:${two(now.minute)}';
-    bytes.addAll(_tx(g,
-        '${two(date.day)}.${two(date.month)}.${date.year} · $range',
-        styles: _center));
-    bytes.addAll(_tx(g, '=' * cols, styles: _z));
-    bytes.addAll(_tx(g, row('Buyurtmalar', '$ordersCount ta'), styles: _z));
-    bytes.addAll(
-        _tx(g, row('JAMI SAVDO', Money.formatSom(totalSales)), styles: _zBold));
-    bytes.addAll(_tx(g, '-' * cols, styles: _z));
-    bytes.addAll(_tx(g, row('Naqd', Money.formatSom(cash)), styles: _z));
-    bytes.addAll(_tx(g, row('KARTA', Money.formatSom(card)), styles: _zBold));
-    bytes.addAll(_tx(g, row('Click', Money.formatSom(click)), styles: _z));
-    bytes.addAll(_tx(g, row('Uzum', Money.formatSom(uzum)), styles: _z));
-    if (keldi != 0) {
-      bytes.addAll(
-          _tx(g, row('Keldi-ketdi', Money.formatSom(keldi)), styles: _z));
-    }
-    bytes.addAll(_tx(g, '=' * cols, styles: _z));
-    bytes.addAll(_tx(g, 'KARTA qatorini bank terminalining', styles: _center));
-    bytes.addAll(
-        _tx(g, '"закрытие дня" summasi bilan solishtiring', styles: _center));
     bytes.addAll(g.feed(2));
     bytes.addAll(g.cut());
     return bytes;
